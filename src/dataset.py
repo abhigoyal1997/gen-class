@@ -8,8 +8,12 @@ from torchvision.datasets import DatasetFolder
 
 
 class BloodCellsDataset(DatasetFolder):
-    def __init__(self, root, augment=False, image_size=None, masks=True):
-        super(BloodCellsDataset, self).__init__(os.path.join(root, 'images'), self.loader, ['.jpeg'])
+    def __init__(self, root, image_size, augment=False, masks=True):
+        if masks:
+            images_dir = os.path.join(root, 'images')
+        else:
+            images_dir = root
+        super(BloodCellsDataset, self).__init__(images_dir, self.loader, ['.jpeg'])
         self.augment = augment
         self.image_size = image_size
         self.masks = masks

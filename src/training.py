@@ -1,13 +1,10 @@
 import os
 import torch
-import shutil
 
 from torch.utils.data import random_split, DataLoader
 from torch.optim import Adam
-from torchvision.datasets import ImageFolder
 from tensorboardX import SummaryWriter
 from time import time
-from src import classifier
 
 
 def save_model(model, model_path):
@@ -32,26 +29,35 @@ def train(model, hparams, dataset, model_path=None, log_interval=None, device=to
     train_batches = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers, shuffle=True)
     valid_batches = DataLoader(valid_set, batch_size=batch_size, num_workers=num_workers)
 
-    module = eval(model.__class__.__name__.lower())
-
-    criterion = module.get_criterion()
+    criterion = model.get_criterion()
     optimizer = Adam(model.parameters())
 
-    log_path = model_path.replace('models','logs')
-    if os.path.exists(log_path):
-        shutil.rmtree(log_path)
+    log_path = model_path.replace('models','logs')+'_'+str(time())
     writer = SummaryWriter(log_dir=log_path)
 
-    best_acc = 0.0
+    best_val = None
     for epoch in range(num_epochs):
         # Train
-        metrics = module.run_epoch('train', model, criterion, optimizer, train_batches, epoch, writer, log_interval, device)
+        metrics = model.run_epoch('train', train_batches, criterion=criterion, optimizer=optimizer, epoch=epoch, writer=writer, log_interval=log_interval, device=device)
         print('Train: {}'.format(metrics))
 
         # Validate
-        metrics = module.run_epoch('valid', model, criterion, optimizer, valid_batches, epoch, writer, log_interval, device)
+        metrics = model.run_epoch('valid', valid_batches, criterion=criterion, epoch=epoch, writer=writer, log_interval=log_interval, device=device)
         print('Validation: {}'.format(metrics))
 
-        if metrics['acc'] > best_acc:
-            best_acc = metrics['acc']
-            save_model(model, model_path)
+        if 'acc' in metrics:
+            if best_val is None or metrics['acc'] > best_val:
+                best_val = metrics['acc']
+                save_model(model, model_path)
+        elif 'score' in metrics:
+            if best_val is None or metrics['score'] > best_val:
+                best_val = metrics['score']
+                save_model(model, model_path)
+        elif 'dice' in metrics:
+            if best_val is None or metrics['dice'] > best_val:
+                best_val = metrics['dice']
+                save_model(model, model_path)
+        elif 'mse' in metrics:
+            if best_val is None or metrics['mse'] < best_val:
+                best_val = metrics['mse']
+                save_model(model, model_path)
