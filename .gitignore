@@ -1,6 +1,7 @@
 models/
 logs/
 test.py
+*.txt
 
 ### JupyterNotebook ###
 .ipynb_checkpoints
