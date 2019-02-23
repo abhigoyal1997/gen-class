@@ -114,43 +114,44 @@ class Classifier(nn.Module):
         predictions = None
         if labels:
             y_true = None
-        for data in tqdm(batches):
-            for k in range(len(data)):
-                data[k] = data[k].to(device)
+        with torch.no_grad():
+            for data in tqdm(batches):
+                for k in range(len(data)):
+                    data[k] = data[k].to(device)
+                if labels:
+                    if len(data) == 3:
+                        x,z,y = data
+                    else:
+                        x,y = data
+                        z = None
+                else:
+                    if len(data) == 3:
+                        x,z,_ = data
+                    elif len(data) == 2:
+                        x,_ = data
+                        z = None
+                    else:
+                        x = data[0]
+                        z = None
+
+                # Forward Pass
+                logits = self.forward(x,z)
+
+                # Update metrics
+                if predictions is None:
+                    predictions = torch.argmax(logits,dim=1)
+                    if labels:
+                        y_true = y
+                else:
+                    predictions = torch.cat([predictions, torch.argmax(logits,dim=1)])
+                    if labels:
+                        y_true = torch.cat([y_true, y])
+
             if labels:
-                if len(data) == 3:
-                    x,z,y = data
-                else:
-                    x,y = data
-                    z = None
+                accuracy = (predictions == y_true.long()).double().mean().item()
+                return {'predictions': predictions, 'acc': accuracy}
             else:
-                if len(data) == 3:
-                    x,z,_ = data
-                elif len(data) == 2:
-                    x,_ = data
-                    z = None
-                else:
-                    x = data[0]
-                    z = None
-
-            # Forward Pass
-            logits = self.forward(x,z)
-
-            # Update metrics
-            if predictions is None:
-                predictions = torch.argmax(logits,dim=1)
-                if labels:
-                    y_true = y
-            else:
-                predictions = torch.cat([predictions, torch.argmax(logits,dim=1)])
-                if labels:
-                    y_true = torch.cat([y_true, y])
-
-        if labels:
-            accuracy = (predictions == y_true.long()).double().mean().item()
-            return {'predictions': predictions, 'acc': accuracy}
-        else:
-            return {'predictions': predictions}
+                return {'predictions': predictions}
 
 
 def get_attention_xy(mask):

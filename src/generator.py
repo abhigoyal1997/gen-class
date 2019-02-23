@@ -48,7 +48,8 @@ class Generator(nn.Module):
 
     def forward(self, x):
         sz = x.shape[2:]
-        x = F.interpolate(x, size=self.image_size, mode='bilinear', align_corners=True)
+        if sz != self.image_size:
+            x = F.interpolate(x, size=self.image_size, mode='bilinear', align_corners=True)
         f_stack = []
         for block in self.down_blocks:
             x,f = block(x)
@@ -62,7 +63,8 @@ class Generator(nn.Module):
         for layer in self.final_layers:
             x = layer(x)
 
-        x = F.interpolate(x, size=sz, mode='bilinear', align_corners=True)
+        if sz != x.shape[2:]:
+            x = F.interpolate(x, size=sz, mode='bilinear', align_corners=True)
         return x
 
     def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None, device=torch.device('cpu')):

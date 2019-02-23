@@ -3,64 +3,11 @@ import argparse
 import torch
 
 from src.dataset import BloodCellsDataset as Dataset
-from src.classifier import Classifier
-from src.generator import Generator
 from src.training import train
 from src.testing import test
+from src.model_utils import read_config, read_hparams, load_model, create_model
 
 RANDOM_SEED = 1234
-
-
-def read_config(config_file):
-    def cast(x):
-        if '.' in x:
-            return float(x)
-        else:
-            try:
-                return int(x)
-            except Exception:
-                return x
-
-    with open(config_file, 'r') as f:
-        config = f.readlines()
-    for i in range(len(config)):
-        config[i] = list(map(cast, config[i].split()))
-    return config
-
-
-def create_model(config, device):
-    if config[0][0] == 'generator':
-        model = Generator(config)
-    elif config[0][0] == 'classifier':
-        model = Classifier(config)
-    return model.to(device)
-
-
-def get_model(model_path, device):
-    config = read_config(os.path.join(model_path, 'config.txt'))
-    model = create_model(config, device)
-    state_path = os.path.join(model_path, config[0][0]+'.pth')
-    model.load_state_dict(torch.load(state_path, map_location=device))
-    return model
-
-
-def read_hparams(spec_file):
-    with open(spec_file,'r') as f:
-        spec = f.readlines()
-    param_keys = [
-        'batch_size',
-        'num_epochs',
-        'train_ratio',
-        'mask_ratio',
-        'num_workers'
-    ]
-    hparams = {}
-    for i in range(len(param_keys)):
-        if '.' in spec[i]:
-            hparams[param_keys[i]] = float(spec[i])
-        else:
-            hparams[param_keys[i]] = int(spec[i])
-    return hparams
 
 
 def main(args):
@@ -76,10 +23,7 @@ def main(args):
         hparams = read_hparams(args.train_specs)
 
         print('Creating new model...', flush=True)
-        if config[0] == 'generator-classifier':
-            pass  # TODO: create a generator-classifier
-        else:
-            model = create_model(config, args.device)
+        model = create_model(config, device=args.device)
         print('Model initialized!', flush=True)
 
         print('Loading data...', flush=True)
@@ -93,7 +37,7 @@ def main(args):
             exit(0)
 
         print('Loding model...', flush=True)
-        model = get_model(args.model_path, args.device)
+        model = load_model(args.model_path, args.device)
         print('Model loaded!', flush=True)
 
         print('Loading data...', flush=True)
@@ -107,7 +51,7 @@ def main(args):
             exit(0)
 
         print('Loding model...', flush=True)
-        model = get_model(args.model_path, args.device)
+        model = load_model(args.model_path, args.device)
         print('Model loaded!', flush=True)
 
         print('Loading data...', flush=True)

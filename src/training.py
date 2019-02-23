@@ -1,18 +1,10 @@
-import os
 import torch
 
 from torch.utils.data import random_split, DataLoader
 from torch.optim import Adam
 from tensorboardX import SummaryWriter
 from time import time
-
-
-def save_model(model, model_path):
-    with open(os.path.join(model_path,'config.txt'),'w') as f:
-        f.write('\n'.join([' '.join([str(j) for j in i]) for i in model.config]))
-
-    torch.save(model.state_dict(), os.path.join(model_path, '{}.pth'.format(model.config[0][0])))
-    print('{} saved to {}'.format(model.config[0][0], model_path))
+from src.model_utils import save_model
 
 
 def train(model, hparams, dataset, model_path=None, log_interval=None, device=torch.device('cpu')):

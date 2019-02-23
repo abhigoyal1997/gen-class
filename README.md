@@ -8,13 +8,12 @@
 4. RATIO_OF_MASKS
 5. NUMBER_OF_WORKERS (for data loader)
 
-### Generator-Classifier Configuration
+### GenClassifier Configuration
 
-1. MODEL_CODE (generator-classifier)
-2. IMAGE_CHANNELS IMAGE_HEIGHT IMAGE_WIDTH
-3. NUMBER_OF_MASK_SAMPLES
-4. PATH_TO_GENERATOR
-5. PATH_TO_CLASSIFIER
+1. MODEL_CODE (genclassifier)
+2. NUMBER_OF_MASK_SAMPLES
+3. PATH_TO_GENERATOR
+4. PATH_TO_CLASSIFIER
 
 ### Generator Configuration
 
