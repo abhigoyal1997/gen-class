@@ -1,0 +1,20 @@
+classifier
+3 240 320
+1 80 80
+conv 32 5 1
+max2d 2
+drop2d 0.25
+relu
+norm2d
+conv 64 3 1
+max2d 2
+drop2d 0.25
+relu
+flat
+linear 128
+drop1d 0.5
+relu
+linear 64
+drop1d 0.5
+relu
+linear 4
