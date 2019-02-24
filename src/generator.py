@@ -166,4 +166,6 @@ class Generator(nn.Module):
 
 def soft_dice(predictions, z_true):
     with torch.no_grad():
-        return (2*(predictions*z_true).sum()/((predictions**2).sum() + (z_true**2).sum())).item()
+        predictions = predictions.view(predictions.size(0),-1)
+        z_true = z_true.view(z_true.size(0),-1)
+        return (2*(predictions*z_true).sum(dim=1)/(predictions**2 + z_true**2).sum(dim=1)).mean().item()

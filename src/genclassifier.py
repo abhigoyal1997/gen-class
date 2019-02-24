@@ -17,61 +17,61 @@ class GenClassifier(nn.Module):
 
         self.image_size = self.generator.image_size
 
-    # TODO: implement run_epoch
-    # def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None, device=torch.device('cpu')):
-    #     if mode == 'train':
-    #         self.train()
-    #     else:
-    #         self.eval()
-    #
-    #     loss = 0.0
-    #     predictions = None
-    #     y_true = None
-    #     i = 0
-    #     for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
-    #         for k in range(len(data)):
-    #             data[k] = data[k].to(device)
-    #         if len(data) == 3:
-    #             x,z,y = data
-    #         else:
-    #             x,y = data
-    #             z = None
-    #
-    #         if mode == 'train':
-    #             optimizer.zero_grad()
-    #
-    #         # Forward Pass
-    #         logits = self.forward(x,z)
-    #         batch_loss = criterion(logits, y)
-    #
-    #         if mode == 'train':
-    #             # Backward Pass
-    #             batch_loss.backward()
-    #             optimizer.step()
-    #
-    #         # Update metrics
-    #         loss += batch_loss.item()
-    #         if predictions is None:
-    #             predictions = torch.argmax(logits,dim=1)
-    #             y_true = y
-    #         else:
-    #             predictions = torch.cat([predictions, torch.argmax(logits,dim=1)])
-    #             y_true = torch.cat([y_true, y])
-    #
-    #         if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
-    #             writer.add_scalar('{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
-    #         i += 1
-    #
-    #     loss = loss/len(batches)
-    #     accuracy = (predictions == y_true.long()).double().mean().item()
-    #     if writer is not None:
-    #         writer.add_scalar('{}_acc'.format(mode), accuracy, epoch)
-    #         if mode == 'valid':
-    #             writer.add_scalar('{}_loss'.format(mode), loss, epoch)
-    #     return {'loss': loss, 'acc': accuracy}
-    #
-    # def get_criterion(self):
-    #     return nn.CrossEntropyLoss()
+    # FIXME: make me work for GenClassifier
+    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None, device=torch.device('cpu')):
+        if mode == 'train':
+            self.train()
+        else:
+            self.eval()
+
+        loss = 0.0
+        predictions = None
+        y_true = None
+        i = 0
+        for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
+            for k in range(len(data)):
+                data[k] = data[k].to(device)
+            if len(data) > 2:
+                x,y,z = data[:3]
+            else:
+                x,y = data
+                z = None
+
+            if mode == 'train':
+                optimizer.zero_grad()
+
+            # Forward Pass
+            logits = self.forward(x,z)
+            batch_loss = criterion(logits, y)
+
+            if mode == 'train':
+                # Backward Pass
+                batch_loss.backward()
+                optimizer.step()
+
+            # Update metrics
+            loss += batch_loss.item()
+            if predictions is None:
+                predictions = torch.argmax(logits,dim=1)
+                y_true = y
+            else:
+                predictions = torch.cat([predictions, torch.argmax(logits,dim=1)])
+                y_true = torch.cat([y_true, y])
+
+            if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
+                writer.add_scalar('{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
+            i += 1
+
+        loss = loss/len(batches)
+        accuracy = (predictions == y_true.long()).double().mean().item()
+        if writer is not None:
+            writer.add_scalar('{}_acc'.format(mode), accuracy, epoch)
+            if mode == 'valid':
+                writer.add_scalar('{}_loss'.format(mode), loss, epoch)
+        return {'loss': loss, 'acc': accuracy}
+
+    def get_criterion(self):
+        return nn.CrossEntropyLoss()
 
     def predict(self, batches, labels=True, device=torch.device('cpu')):
         predictions = None

@@ -20,9 +20,11 @@ def train(model, hparams, dataset, model_path=None, log_interval=None, device=to
 
     if dataset.mask_only:
         train_batches = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers, shuffle=True)
-        valid_batches = DataLoader(valid_set, batch_size=batch_size, num_workers=num_workers)
     else:
-        train_sampler = SBatchSampler()
+        train_sampler = SBatchSampler(dataset.masks_idx[:train_size], batch_size, hparams['mask_ratio'], shuffle=True)
+        train_batches = DataLoader(train_set, batch_sampler=train_sampler, num_workers=num_workers)
+
+    valid_batches = DataLoader(valid_set, batch_size=batch_size, num_workers=num_workers)
 
     criterion = model.get_criterion()
     optimizer = Adam(model.parameters())
