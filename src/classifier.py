@@ -68,8 +68,8 @@ class Classifier(nn.Module):
         for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
             for k in range(len(data)):
                 data[k] = data[k].to(device)
-            if len(data) == 3:
-                x,z,y = data
+            if len(data) > 2:
+                x,y,z = data[:3]
             else:
                 x,y = data
                 z = None
@@ -120,16 +120,13 @@ class Classifier(nn.Module):
                     data[k] = data[k].to(device)
                 if labels:
                     if len(data) == 3:
-                        x,z,y = data
+                        x,y,z = data
                     else:
                         x,y = data
                         z = None
                 else:
-                    if len(data) == 3:
-                        x,z,_ = data
-                    elif len(data) == 2:
-                        x,_ = data
-                        z = None
+                    if len(data) > 1:
+                        x,z = data[:2]
                     else:
                         x = data[0]
                         z = None

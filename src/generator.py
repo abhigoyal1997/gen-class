@@ -78,8 +78,9 @@ class Generator(nn.Module):
         z_true = None
         i = 0
         for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
-            if len(data) == 3:
-                x,z,_ = data
+            if len(data) > 2:
+                x = data[0]
+                z = data[2]
             else:
                 print('Data instance must have masks for training!')
             x = x.to(device)

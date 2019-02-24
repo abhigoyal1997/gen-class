@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from tqdm import tqdm
 
@@ -16,6 +17,7 @@ class GenClassifier(nn.Module):
 
         self.image_size = self.generator.image_size
 
+    # TODO: implement run_epoch
     # def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None, device=torch.device('cpu')):
     #     if mode == 'train':
     #         self.train()
@@ -67,9 +69,9 @@ class GenClassifier(nn.Module):
     #         if mode == 'valid':
     #             writer.add_scalar('{}_loss'.format(mode), loss, epoch)
     #     return {'loss': loss, 'acc': accuracy}
-
-    def get_criterion(self):
-        return nn.CrossEntropyLoss()
+    #
+    # def get_criterion(self):
+    #     return nn.CrossEntropyLoss()
 
     def predict(self, batches, labels=True, device=torch.device('cpu')):
         predictions = None
@@ -113,3 +115,18 @@ class GenClassifier(nn.Module):
                 return {'predictions': predictions, 'acc': accuracy}
             else:
                 return {'predictions': predictions}
+
+
+def segmentation_nll(logits, masks, mean=False):
+    batch_size = logits.shape[0]
+    nll = F.binary_cross_entropy_with_logits(logits, masks, reduction='none').view(batch_size, -1).sum(dim=1)
+    if mean:
+        nll = nll.mean()
+    return nll
+
+
+def classification_nll(logits, labels, mean=False):
+    nll = F.cross_entropy(logits, labels, reduction='none')
+    if mean:
+        nll = nll.mean()
+    return nll

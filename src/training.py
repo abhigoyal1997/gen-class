@@ -1,25 +1,28 @@
 import torch
 
-from torch.utils.data import random_split, DataLoader
+from torch.utils.data import Subset, DataLoader
 from torch.optim import Adam
 from tensorboardX import SummaryWriter
 from time import time
 from src.model_utils import save_model
+from src.dataset import SBatchSampler
 
 
 def train(model, hparams, dataset, model_path=None, log_interval=None, device=torch.device('cpu')):
     batch_size = hparams['batch_size']
     num_epochs = hparams['num_epochs']
     train_ratio = hparams['train_ratio']
-    mask_ratio = hparams['mask_ratio']
     num_workers = hparams['num_workers']
 
     train_size = int(train_ratio*len(dataset))
-    train_set, valid_set = random_split(dataset, [train_size, len(dataset) - train_size])
+    train_set = Subset(dataset, list(range(train_size)))
+    valid_set = Subset(dataset, list(range(train_size, len(dataset))))
 
-    # TODO: create batches of data with masks
-    train_batches = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers, shuffle=True)
-    valid_batches = DataLoader(valid_set, batch_size=batch_size, num_workers=num_workers)
+    if dataset.mask_only:
+        train_batches = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+        valid_batches = DataLoader(valid_set, batch_size=batch_size, num_workers=num_workers)
+    else:
+        train_sampler = SBatchSampler()
 
     criterion = model.get_criterion()
     optimizer = Adam(model.parameters())

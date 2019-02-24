@@ -1,6 +1,6 @@
 models/
 logs/
-test.py
+notebook.py
 *.txt
 
 ### JupyterNotebook ###
