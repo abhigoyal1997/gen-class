@@ -59,13 +59,13 @@ def parse_args():
     parser_train.add_argument('model_path')
     parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
     parser_train.add_argument('-c','--comment',dest='comment',default=None)
-    parser_train.add_argument('-d','--data-file',dest='data_file',default='train_data.csv')
+    parser_train.add_argument('-d','--data-file',dest='data_file',default='dara/train_data.csv')
     parser_train.add_argument('-ds','--data-size',dest='data_size',default=None,type=int)
     parser_train.add_argument('-s','--train-specs',dest='train_specs',default='train_specs.txt')
 
     parser_test = subparsers.add_parser('test')
     parser_test.add_argument('model_path')
-    parser_test.add_argument('-d','--data-file',dest='data_file',default='test_data2.csv')
+    parser_test.add_argument('-d','--data-file',dest='data_file',default='dara/test_data2.csv')
 
     args = parser.parse_args()
     if args.command[:2] == 'tr':
