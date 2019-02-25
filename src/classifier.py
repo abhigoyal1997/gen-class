@@ -77,14 +77,18 @@ class Classifier(nn.Module):
             if mode == 'train':
                 optimizer.zero_grad()
 
-            # Forward Pass
-            logits = self.forward(x,z)
-            batch_loss = criterion(logits, y)
+                # Forward Pass
+                logits = self.forward(x,z)
+                batch_loss = criterion(logits, y)
 
-            if mode == 'train':
                 # Backward Pass
                 batch_loss.backward()
                 optimizer.step()
+            else:
+                with torch.no_grad():
+                    # Forward Pass
+                    logits = self.forward(x,z)
+                    batch_loss = criterion(logits, y)
 
             # Update metrics
             loss += batch_loss.item()

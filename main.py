@@ -28,9 +28,9 @@ def main(args):
 
         print('Loading data...', flush=True)
         if config[0][0] == 'genclassifier':
-            dataset = Dataset(args.data_file, image_size=model.image_size, masks=True)
+            dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED)
         else:
-            dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, mask_only=True)
+            dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, mask_only=True, size=args.ds)
 
         print('Training model...', flush=True)
         train(model, hparams, dataset, model_path, log_interval=10, device=args.device)
@@ -60,7 +60,8 @@ def parse_args():
     parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
     parser_train.add_argument('-c','--comment',dest='comment',default=None)
     parser_train.add_argument('-d','--data-file',dest='data_file',default='data/train_data.csv')
-    parser_train.add_argument('-ds','--data-size',dest='data_size',default=None,type=int)
+    parser_train.add_argument('-ds','--train-size',dest='ds',default=None,type=int)
+    parser_train.add_argument('-ms','--num-masks',dest='ms',default=None,type=int)
     parser_train.add_argument('-s','--train-specs',dest='train_specs',default='train_specs.txt')
 
     parser_test = subparsers.add_parser('test')

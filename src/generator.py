@@ -89,14 +89,18 @@ class Generator(nn.Module):
             if mode == 'train':
                 optimizer.zero_grad()
 
-            # Forward Pass
-            logits = self.forward(x)
-            batch_loss = criterion(logits, z)
+                # Forward Pass
+                logits = self.forward(x)
+                batch_loss = criterion(logits, z)
 
-            if mode == 'train':
                 # Backward Pass
                 batch_loss.backward()
                 optimizer.step()
+            else:
+                with torch.no_grad():
+                    # Forward Pass
+                    logits = self.forward(x)
+                    batch_loss = criterion(logits, z)
 
             # Update metrics
             loss += batch_loss.item()

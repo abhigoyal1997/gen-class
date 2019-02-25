@@ -63,7 +63,6 @@ def read_hparams(spec_file):
         'batch_size',
         'num_epochs',
         'train_ratio',
-        'mask_ratio',
         'num_workers'
     ]
     hparams = {}

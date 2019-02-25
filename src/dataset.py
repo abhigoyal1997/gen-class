@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, Sampler
 
 
 class SBatchSampler(Sampler):
-    def __init__(self, masks_idx, batch_size, mask_ratio=1.0, shuffle=False):
+    def __init__(self, masks_idx, batch_size, shuffle=False):
         self.batch_size = batch_size
 
         self.indices_with_masks = []
@@ -19,7 +19,6 @@ class SBatchSampler(Sampler):
             else:
                 self.indices_without_masks.append(i)
 
-        self.indices_with_masks = self.indices_with_masks[:int(mask_ratio*len(self.indices_with_masks))]
         num_masks = len(self.indices_with_masks)
 
         self.len = len(masks_idx) // (batch_size)
@@ -68,14 +67,15 @@ class BloodCellsDataset(Dataset):
                 self.df[self.df.mask_path == 'none'].sample(frac=1, random_state=random_seed),
             ]).reset_index(drop=True)
 
-        self.num_masks = (self.df.mask_path != 'none').sum()
-        if num_masks is not None:
-            self.num_masks = min(num_masks, self.num_masks)
+            self.num_masks = (self.df.mask_path != 'none').sum()
+            if num_masks is not None:
+                self.num_masks = min(num_masks, self.num_masks)
 
         if size is not None:
             self.df = self.df.iloc[:size]
 
-        self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
+        if masks:
+            self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
 
     def transformation(self, imgs):
         for i in range(len(imgs)):
