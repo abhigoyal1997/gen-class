@@ -60,7 +60,8 @@ class BloodCellsDataset(Dataset):
         self.df = pd.read_csv(meta_file)
 
         if mask_only:
-            self.df = self.df[self.df.mask_path != 'none'].reset_index(drop=True)
+            self.df = self.df[self.df.mask_path != 'none'].sample(frac=1, random_state=random_seed).reset_index(drop=True)
+            self.num_masks = len(self.df)
         elif masks:
             self.df = pd.concat([
                 self.df[self.df.mask_path != 'none'].sample(frac=1, random_state=random_seed),
@@ -75,7 +76,10 @@ class BloodCellsDataset(Dataset):
             self.df = self.df.iloc[:size]
 
         if masks:
+            self.num_masks = min(len(self.df), self.num_masks)
             self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
+
+        print('Loaded {} instances!'.format(len(self.df)))
 
     def transformation(self, imgs):
         for i in range(len(imgs)):

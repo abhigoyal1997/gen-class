@@ -46,6 +46,12 @@ class Generator(nn.Module):
                 x = self.final_layers[-1](x)
             i += 1
 
+        self.is_cuda = False
+
+    def cuda(self, device=None):
+        self.is_cuda = True
+        return super(Generator, self).cuda(device)
+
     def forward(self, x):
         sz = x.shape[2:]
         if sz != self.image_size:
@@ -67,7 +73,7 @@ class Generator(nn.Module):
             x = F.interpolate(x, size=sz, mode='bilinear', align_corners=True)
         return x
 
-    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None, device=torch.device('cpu')):
+    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
         if mode == 'train':
             self.train()
         else:
@@ -83,8 +89,11 @@ class Generator(nn.Module):
                 z = data[2]
             else:
                 print('Data instance must have masks for training!')
-            x = x.to(device)
-            z = z.to(device)
+                exit(0)
+
+            if self.is_cuda:
+                x = x.cuda()
+                z = z.cuda()
 
             if mode == 'train':
                 optimizer.zero_grad()
@@ -112,21 +121,21 @@ class Generator(nn.Module):
                 z_true = torch.cat([z_true, z])
 
             if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
-                writer.add_scalar('{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
+                writer.add_scalar('g/{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
             i += 1
 
         loss = loss/len(batches)
         dice = soft_dice(predictions, z_true.float())
         if writer is not None:
-            writer.add_scalar('{}_dice'.format(mode), dice, epoch)
+            writer.add_scalar('g/{}_dice'.format(mode), dice, epoch)
             if mode == 'valid':
-                writer.add_scalar('{}_loss'.format(mode), loss, epoch)
+                writer.add_scalar('g/{}_loss'.format(mode), loss, epoch)
         return {'loss': loss, 'dice': dice}
 
     def get_criterion(self):
         return nn.BCEWithLogitsLoss()
 
-    def predict(self, batches, labels=True, device=torch.device('cpu')):
+    def predict(self, batches, labels=True):
         self.eval()
         with torch.no_grad():
             predictions = None
@@ -138,8 +147,10 @@ class Generator(nn.Module):
                         x,z,_ = data
                     else:
                         x,z = data
-                    x = x.to(device)
-                    z = z.to(device)
+
+                    if self.is_cuda:
+                        x = x.cuda()
+                        z = z.cuda()
                 else:
                     if len(data) == 3:
                         x,_,_ = data
@@ -147,7 +158,9 @@ class Generator(nn.Module):
                         x,_ = data
                     else:
                         x = data[0]
-                    x = x.to(device)
+
+                    if self.is_cuda:
+                        x = x.cuda()
 
                 # Forward Pass
                 logits = self.forward(x)

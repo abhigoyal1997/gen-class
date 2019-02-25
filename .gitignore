@@ -2,6 +2,7 @@ models/
 logs/
 notebook.py
 *.txt
+**out**
 
 ### JupyterNotebook ###
 .ipynb_checkpoints

@@ -34,6 +34,12 @@ class Classifier(nn.Module):
                 x = self.layers[-1](x)
             i += 1
 
+        self.is_cuda = False
+
+    def cuda(self, device=None):
+        self.is_cuda = True
+        return super(Classifier, self).cuda(device)
+
     def forward(self, x, z=None, debug=False):
         if self.use_masks and z is not None:
             x = self.get_attn_img(x,z)
@@ -55,7 +61,7 @@ class Classifier(nn.Module):
         attention_xy = get_attention_xy(z)
         return get_attention_img(x, attention_xy, self.crop_size)
 
-    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None, device=torch.device('cpu')):
+    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
         if mode == 'train':
             self.train()
         else:
@@ -66,8 +72,9 @@ class Classifier(nn.Module):
         y_true = None
         i = 0
         for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
-            for k in range(len(data)):
-                data[k] = data[k].to(device)
+            if self.is_cuda:
+                for k in range(len(data)):
+                    data[k] = data[k].cuda()
             if len(data) > 2:
                 x,y,z = data[:3]
             else:
@@ -100,28 +107,29 @@ class Classifier(nn.Module):
                 y_true = torch.cat([y_true, y])
 
             if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
-                writer.add_scalar('{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
+                writer.add_scalar('c/{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
             i += 1
 
         loss = loss/len(batches)
         accuracy = (predictions == y_true.long()).double().mean().item()
         if writer is not None:
-            writer.add_scalar('{}_acc'.format(mode), accuracy, epoch)
+            writer.add_scalar('c/{}_acc'.format(mode), accuracy, epoch)
             if mode == 'valid':
-                writer.add_scalar('{}_loss'.format(mode), loss, epoch)
+                writer.add_scalar('c/{}_loss'.format(mode), loss, epoch)
         return {'loss': loss, 'acc': accuracy}
 
     def get_criterion(self):
         return nn.CrossEntropyLoss()
 
-    def predict(self, batches, labels=True, device=torch.device('cpu')):
+    def predict(self, batches, labels=True):
         predictions = None
         if labels:
             y_true = None
         with torch.no_grad():
             for data in tqdm(batches):
-                for k in range(len(data)):
-                    data[k] = data[k].to(device)
+                if self.is_cuda:
+                    for k in range(len(data)):
+                        data[k] = data[k].cuda()
                 if labels:
                     if len(data) == 3:
                         x,y,z = data
@@ -168,7 +176,7 @@ def get_attention_xy(mask):
     return attention_xy
 
 
-def find_attention_xy(contours):
+def find_attention_xy(contours):  # FIXME: speed me up
     size = 0
     tx, ty, bx, by = 0, 0, 0, 0
     for cnt in contours[1]:

@@ -1,5 +1,3 @@
-import torch
-
 from torch.utils.data import Subset, DataLoader
 from torch.optim import Adam
 from tensorboardX import SummaryWriter
@@ -8,7 +6,7 @@ from src.model_utils import save_model
 from src.dataset import SBatchSampler
 
 
-def train(model, hparams, dataset, model_path=None, log_interval=None, device=torch.device('cpu')):
+def train(model, hparams, dataset, model_path=None, log_interval=None):
     batch_size = hparams['batch_size']
     num_epochs = hparams['num_epochs']
     train_ratio = hparams['train_ratio']
@@ -35,11 +33,11 @@ def train(model, hparams, dataset, model_path=None, log_interval=None, device=to
     best_val = None
     for epoch in range(num_epochs):
         # Train
-        metrics = model.run_epoch('train', train_batches, criterion=criterion, optimizer=optimizer, epoch=epoch, writer=writer, log_interval=log_interval, device=device)
+        metrics = model.run_epoch('train', train_batches, criterion=criterion, optimizer=optimizer, epoch=epoch, writer=writer, log_interval=log_interval)
         print('Train: {}'.format(metrics))
 
         # Validate
-        metrics = model.run_epoch('valid', valid_batches, criterion=criterion, epoch=epoch, writer=writer, log_interval=log_interval, device=device)
+        metrics = model.run_epoch('valid', valid_batches, criterion=criterion, epoch=epoch, writer=writer, log_interval=log_interval)
         print('Validation: {}'.format(metrics))
 
         if 'acc' in metrics:

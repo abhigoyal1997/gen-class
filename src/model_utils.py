@@ -6,8 +6,8 @@ from src.generator import Generator
 from src.genclassifier import GenClassifier
 
 MODELS = {
-    'generator': Generator,
-    'classifier': Classifier
+    'g': Generator,
+    'c': Classifier
 }
 
 
@@ -36,23 +36,32 @@ def read_config(config_file):
     return config
 
 
-def create_model(config, device=torch.device('cpu')):
-    if config[0][0] == 'genclassifier':
-        generator = load_model(config[2][0], device)
-        classifier = load_model(config[3][0], device)
-        return GenClassifier(config, generator, classifier).to(device)
+def create_model(config, cuda=True):
+    if config[0][0] == 'gc':
+        generator = load_model(config[2][0], False)
+        classifier = load_model(config[3][0], False)
+        model = GenClassifier(config, generator, classifier)
     elif config[0][0] in MODELS:
-        return MODELS[config[0][0]](config).to(device)
+        model = MODELS[config[0][0]](config)
     else:
         print('{} not implemented!'.format(config[0][0]))
+        exit(0)
+
+    if cuda:
+        return model.cuda()
+    else:
+        return model
 
 
-def load_model(model_path, device):
+def load_model(model_path, cuda):
     config = read_config(os.path.join(model_path, 'config.txt'))
-    model = create_model(config, device)
-    if config[0][0] != 'genclassifier':
-        state_path = os.path.join(model_path, config[0][0]+'.pth')
-        model.load_state_dict(torch.load(state_path, map_location=device))
+    model = create_model(config, cuda)
+    state_path = os.path.join(model_path, config[0][0]+'.pth')
+    if os.path.exists(state_path):
+        if cuda:
+            model.load_state_dict(torch.load(state_path, map_location='cuda'))
+        else:
+            model.load_state_dict(torch.load(state_path, map_location='cpu'))
     return model
 
 
