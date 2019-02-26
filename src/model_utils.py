@@ -58,6 +58,7 @@ def load_model(model_path, cuda):
     model = create_model(config, cuda)
     state_path = os.path.join(model_path, config[0][0]+'.pth')
     if os.path.exists(state_path):
+        print('Loading weights from {}...'.format(state_path))
         if cuda:
             model.load_state_dict(torch.load(state_path, map_location='cuda'))
         else:

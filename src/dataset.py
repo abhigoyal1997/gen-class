@@ -79,7 +79,7 @@ class BloodCellsDataset(Dataset):
             self.num_masks = min(len(self.df), self.num_masks)
             self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
 
-        print('Loaded {} instances!'.format(len(self.df)))
+        print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks))
 
     def transformation(self, imgs):
         for i in range(len(imgs)):
