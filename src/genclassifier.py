@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 
 from tqdm import tqdm
 
 
 class GenClassifier(nn.Module):
-    def __init__(self, config, generator=None, classifier=None):
+    def __init__(self, config, generator=None, classifier=None, fix_generator=False, fix_classifier=False):
         super(GenClassifier, self).__init__()
 
         self.config = config
@@ -20,8 +19,24 @@ class GenClassifier(nn.Module):
 
         self.is_cuda = False
 
+        self.classifier_criterion = nn.CrossEntropyLoss(reduction='none')
+        self.generator_criterion = nn.BCEWithLogitsLoss(reduction='none')
+
+        self.fix_generator = fix_generator
+        self.fix_classifier = fix_classifier
+
+        if self.fix_generator:
+            for p in self.generator.parameters():
+                p.requires_grad = False
+
+        if self.fix_classifier:
+            for p in self.classifier.parameters():
+                p.requires_grad = False
+
     def cuda(self, device=None):
         self.is_cuda = True
+        self.generator.is_cuda = True
+        self.classifier.is_cuda = True
         return super(GenClassifier, self).cuda(device)
 
     def get_criterion(self):
@@ -91,7 +106,7 @@ class GenClassifier(nn.Module):
             zl = torch.cat([zl[:num_masks], zl[num_masks:].repeat(self.num_mask_samples, 1, 1, 1)])
 
         yl = self.classifier(x,z)
-        nll = segmentation_nll(zl, z) + classification_nll(yl, y)
+        nll = self.segmentation_nll(zl, z) + self.classification_nll(yl, y)
 
         if num_masks == 0:
             nll = nll.sum()/self.num_mask_samples
@@ -167,20 +182,18 @@ class GenClassifier(nn.Module):
             else:
                 return {'predictions': predictions}
 
+    def segmentation_nll(self, logits, masks, mean=False):
+        batch_size = logits.shape[0]
+        nll = self.generator_criterion(logits, masks).view(batch_size, -1).mean(dim=1)
+        if mean:
+            nll = nll.mean()
+        return nll
 
-def segmentation_nll(logits, masks, mean=False):
-    batch_size = logits.shape[0]
-    nll = F.binary_cross_entropy_with_logits(logits, masks, reduction='none').view(batch_size, -1).mean(dim=1)
-    if mean:
-        nll = nll.mean()
-    return nll
-
-
-def classification_nll(logits, labels, mean=False):
-    nll = F.cross_entropy(logits, labels, reduction='none')
-    if mean:
-        nll = nll.mean()
-    return nll
+    def classification_nll(self, logits, labels, mean=False):
+        nll = self.classifier_criterion(logits, labels)
+        if mean:
+            nll = nll.mean()
+        return nll
 
 
 def p_z(p, x, y, z, classifier):
@@ -196,11 +209,11 @@ def mh_sample(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
         zp = torch.sigmoid(zl)
         samples = None
         s1 = torch.ge(zp, 0.5).float()
+        pz1 = p_z(zp, x, y, s1, classifier)
 
         for _ in range(num_samples):
             for _ in range(burnin):
                 s2 = torch.bernoulli(zp).float()
-                pz1 = p_z(zp, x, y, s1, classifier)
                 pz2 = p_z(zp, x, y, s2, classifier)
                 r = pz2/pz1
                 if cuda:
@@ -212,6 +225,7 @@ def mh_sample(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
                     continue
                 s2[ns[:,0]] = s1[ns[:,0]]
                 s1 = s2
+                pz1 = pz2
             if samples is None:
                 samples = s2
             else:

@@ -71,6 +71,8 @@ class BloodCellsDataset(Dataset):
             self.num_masks = (self.df.mask_path != 'none').sum()
             if num_masks is not None:
                 self.num_masks = min(num_masks, self.num_masks)
+        else:
+            self.num_masks = None
 
         if size is not None:
             self.df = self.df.iloc[:size]
@@ -79,7 +81,7 @@ class BloodCellsDataset(Dataset):
             self.num_masks = min(len(self.df), self.num_masks)
             self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
 
-        print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks))
+        print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks if self.num_masks is not None else 0))
 
     def transformation(self, imgs):
         for i in range(len(imgs)):

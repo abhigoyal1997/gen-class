@@ -40,7 +40,7 @@ def main(args):
             exit(0)
 
         print('Loding model...', flush=True)
-        model = load_model(args.model_path, cuda=args.cuda)
+        model = load_model(args.model_path, cuda=args.cuda, weights=not args.test_init)
         print('Model loaded!', flush=True)
 
         print('Loading data...', flush=True)
@@ -70,6 +70,7 @@ def parse_args():
     parser_test = subparsers.add_parser('test')
     parser_test.add_argument('model_path')
     parser_test.add_argument('-d','--data-file',dest='data_file',default='data/test_data2.csv')
+    parser_test.add_argument('-i','--test-init',dest='test_init',default=False,action='store_true')
 
     args = parser.parse_args()
     if args.command[:2] == 'tr':

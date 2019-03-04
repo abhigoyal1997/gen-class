@@ -3,6 +3,8 @@ logs/
 notebook.py
 *.txt
 **out**
+*results*
+*prof*
 
 ### JupyterNotebook ###
 .ipynb_checkpoints

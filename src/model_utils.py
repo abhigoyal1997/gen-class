@@ -40,7 +40,7 @@ def create_model(config, cuda=True):
     if config[0][0] == 'gc':
         generator = load_model(config[2][0], False)
         classifier = load_model(config[3][0], False)
-        model = GenClassifier(config, generator, classifier)
+        model = GenClassifier(config, generator, classifier, fix_generator=(config[2][-1] == 'fix'), fix_classifier=(config[3][-1] == 'fix'))
     elif config[0][0] in MODELS:
         model = MODELS[config[0][0]](config)
     else:
@@ -53,11 +53,11 @@ def create_model(config, cuda=True):
         return model
 
 
-def load_model(model_path, cuda):
+def load_model(model_path, cuda, weights=True):
     config = read_config(os.path.join(model_path, 'config.txt'))
     model = create_model(config, cuda)
     state_path = os.path.join(model_path, config[0][0]+'.pth')
-    if os.path.exists(state_path):
+    if os.path.exists(state_path) and weights:
         print('Loading weights from {}...'.format(state_path))
         if cuda:
             model.load_state_dict(torch.load(state_path, map_location='cuda'))
