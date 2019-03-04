@@ -42,9 +42,7 @@ class Classifier(nn.Module):
 
     def forward(self, x, z=None, debug=False):
         if self.use_masks and z is not None:
-            x = crop_images(x,z, self.crop_size)
-            if self.is_cuda:
-                x = x.cuda()
+            x = crop_images(x,z, self.crop_size, self.is_cuda)
 
         if debug:
             outputs = [x]
@@ -186,34 +184,26 @@ def get_attention_img(img, mask, sz=(80,80)):
     return F.interpolate(img.unsqueeze(0), size=sz, mode='bilinear', align_corners=True)
 
 
-def crop_images(img, mask, sz=(80,80)):
+def crop_images(img, mask, sz=(80,80), cuda=True):
     mask = mask.byte().squeeze().cpu().numpy()
-    # return torch.cat([get_attention_img(img[i], mask[i], sz) for i in range(img.size(0))])
-    # cnt = map(lambda x:cv.findContours(x,cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[1], mask)
     cnt = [cv.findContours(x,cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[1] for x in mask]
-    # attention_xy = map(find_attention_xy, cnt)
-    # attention_xy = [find_attention_xy(z) for z in mask]
     pts = [torch.Tensor([[np.min(ci.squeeze(axis=1),axis=0), np.max(ci.squeeze(axis=1),axis=0)] for ci in c]).int() for c in cnt]
 
     size = [(p[:,1,:]-p[:,0,:]).prod(dim=1) if p.dim() > 1 else torch.Tensor([0]) for p in pts]
     i = [sz.argmax().item() for sz in size]
-    tx = [pts[j][i[j],0,0].item() if pts[j].dim() > 1 else 0 for j in range(len(i))]
-    ty = [pts[j][i[j],0,1].item() if pts[j].dim() > 1 else 0 for j in range(len(i))]
-    bx = [pts[j][i[j],1,0].item() if pts[j].dim() > 1 else 0 for j in range(len(i))]
-    by = [pts[j][i[j],1,1].item() if pts[j].dim() > 1 else 0 for j in range(len(i))]
-    # import pudb; pudb.set_trace()
-    attention_img = [img[i,:,:,:] if (bx[i] - tx[i])*(by[i] - ty[i]) == 0 else img[i, :, ty[i]:by[i], tx[i]:bx[i]] for i in range(img.size(0))]
-    attention_img = torch.cat([F.interpolate(img.unsqueeze(0), size=sz, mode='bilinear', align_corners=True) for img in attention_img])
+    tx = torch.Tensor([pts[j][i[j],0,0].item() if pts[j].dim() > 1 else 0 for j in range(len(i))])
+    ty = torch.Tensor([pts[j][i[j],0,1].item() if pts[j].dim() > 1 else 0 for j in range(len(i))])
+    bx = torch.Tensor([pts[j][i[j],1,0].item() if pts[j].dim() > 1 else img.shape[3] for j in range(len(i))])
+    by = torch.Tensor([pts[j][i[j],1,1].item() if pts[j].dim() > 1 else img.shape[2] for j in range(len(i))])
 
-    # attention_img = torch.empty(*img.shape[:2],*sz)
-    # interpolate = F.interpolate
-    # for i,d in enumerate(attention_xy):
-    #     tx, ty, bx, by = d
-    #     if tx == 0 and ty == 0 and bx == 0 and by == 0:
-    #         this_attention_img = img[i, :, :, :]
-    #     else:
-    #         this_attention_img = img[i, :, ty:by, tx:bx]
-    #
-    #     this_attention_img = this_attention_img.unsqueeze(0)
-    #     attention_img[i,:,:,:] = interpolate(this_attention_img, size=sz, mode='bilinear', align_corners=True)
+    if cuda:
+        tx = tx.cuda()
+        ty = ty.cuda()
+        bx = bx.cuda()
+        by = by.cuda()
+
+    tx = torch.clamp((tx+bx)/2-sz[1]/2, 0, img.shape[3] - sz[1]).long()
+    ty = torch.clamp((ty+by)/2-sz[0]/2, 0, img.shape[2] - sz[0]).long()
+
+    attention_img = torch.cat([img[i, None, :, ty[i]:ty[i]+sz[1], tx[i]:tx[i]+sz[0]] for i in range(img.size(0))])
     return attention_img
