@@ -12,18 +12,20 @@ class Flat(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, batch_norm=False, kernel_size=3):
+    def __init__(self, in_channels, out_channels):
         super(ConvBlock, self).__init__()
 
         self.layers = nn.ModuleList([
-            create_module(['conv', out_channels, kernel_size], in_channels),
-            create_module(['relu'])
+            create_module(['conv', out_channels, 3], in_channels),
+            create_module(['relu']),
+            create_module(['norm2d'], out_channels),
+            create_module(['pad2d', 1])
         ])
-        if batch_norm:
-            self.layers.append(create_module(['norm2d'], out_channels))
 
-        self.layers.append(create_module(['conv', out_channels, kernel_size], out_channels))
+        self.layers.append(create_module(['conv', out_channels, 3], out_channels))
         self.layers.append(create_module(['relu']))
+        self.layers.append(create_module(['norm2d'], out_channels))
+        self.layers.append(create_module(['pad2d', 1]))
 
     def forward(self, x):
         for layer in self.layers:
@@ -32,8 +34,8 @@ class ConvBlock(nn.Module):
 
 
 class DownConvBlock(ConvBlock):
-    def __init__(self, in_channels, out_channels, batch_norm=False, kernel_size=3):
-        super(DownConvBlock, self).__init__(in_channels, out_channels, kernel_size=kernel_size, batch_norm=batch_norm)
+    def __init__(self, in_channels, out_channels):
+        super(DownConvBlock, self).__init__(in_channels, out_channels)
 
         self.pool = create_module(['max2d',2])
 
@@ -44,12 +46,12 @@ class DownConvBlock(ConvBlock):
 
 
 class UpConvBlock(ConvBlock):
-    def __init__(self, in_channels, out_channels, kernel_size=3, side_channels=None):
+    def __init__(self, in_channels, out_channels, side_channels=None):
         channels = int(in_channels/2)
         if side_channels is None:
             side_channels = channels
 
-        super(UpConvBlock, self).__init__(channels + side_channels, out_channels, kernel_size=kernel_size)
+        super(UpConvBlock, self).__init__(channels + side_channels, out_channels)
 
         self.tconv = create_module(['tconv', channels, 2, 2], in_channels)
 
@@ -57,6 +59,11 @@ class UpConvBlock(ConvBlock):
         x1 = self.tconv(x1)
 
         x2 = F.interpolate(x2, x1.shape[2:], mode='bilinear', align_corners=True)
+        # th,tw = x1.shape[2:]
+        # h,w = x2.shape[2:]
+        # h = h//2-th//2
+        # w = w//2-tw//2
+        # x2 = x2[:,:,h:h+th,w:w+tw]
         x = torch.cat([x1,x2], dim=1)
         x = super(UpConvBlock, self).forward(x)
         return x
@@ -66,6 +73,7 @@ MODULES = {
     'nn': {
         'conv': nn.Conv2d,
         'linear': nn.Linear,
+        'norm1d': nn.BatchNorm1d,
         'norm2d': nn.BatchNorm2d,
         'cblock': ConvBlock,
         'dblock': DownConvBlock,
@@ -77,7 +85,8 @@ MODULES = {
         'relu': nn.ReLU,
         'drop1d': nn.Dropout,
         'drop2d': nn.Dropout2d,
-        'flat': Flat
+        'flat': Flat,
+        'pad2d': nn.ZeroPad2d
     }
 }
 

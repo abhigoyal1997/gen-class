@@ -35,14 +35,14 @@ class GenClassifier(nn.Module):
 
     def cuda(self, device=None):
         self.is_cuda = True
-        self.generator.is_cuda = True
-        self.classifier.is_cuda = True
+        self.generator.cuda(device)
+        self.classifier.cuda(device)
         return super(GenClassifier, self).cuda(device)
 
     def get_criterion(self):
         return self.e_step
 
-    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
+    def run_epoch(self, mode, batches, epoch=None, criterion=None, optimizer=None, writer=None, log_interval=None):
         if mode == 'train':
             self.train()
         else:
@@ -52,15 +52,20 @@ class GenClassifier(nn.Module):
         i = 0
         correct_predictions = 0
         data_size = 0
-        for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
+        if epoch is not None:
+            b_iter = tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches))
+        else:
+            b_iter = tqdm(batches, total=len(batches))
+        for data in b_iter:
             if self.is_cuda:
                 for k in range(min(3,len(data))):
                     data[k] = data[k].cuda()
-            x,y,z,m = data
-            num_masks = sum(m)
 
             if mode == 'train':
                 optimizer.zero_grad()
+
+                x,y,z,m = data
+                num_masks = sum(m)
 
                 # Forward Pass
                 zl = self.generator(x)
@@ -72,6 +77,7 @@ class GenClassifier(nn.Module):
                 # Backward Pass
                 self.m_step(batch_loss, optimizer)
             else:
+                x,y = data[:2]
                 pred,batch_loss = self.predict_batch(x, y, zl=None, loss=True, return_masks=False)
 
             # Update metrics
@@ -151,10 +157,17 @@ class GenClassifier(nn.Module):
                 else:
                     return torch.argmax(yp, dim=1)
 
-    def predict(self, batches, labels=True):
-        predictions = None
+    def predict(self, batches, labels=True, return_predictions=False):
+        self.eval()
+        if return_predictions:
+            predictions = None
+        elif not labels:
+            return
+
         if labels:
-            y_true = None
+            correct_predictions = 0
+            data_size = 0
+
         with torch.no_grad():
             for data in tqdm(batches):
                 if self.is_cuda:
@@ -166,19 +179,23 @@ class GenClassifier(nn.Module):
 
                 pred, z = self.predict_batch(x,None)
                 # Update metrics
-                if predictions is None:
-                    predictions = [pred.cpu().numpy(), z.cpu().numpy()]
-                    if labels:
-                        y_true = y.long().cpu().numpy()
-                else:
-                    predictions[0] = np.concatenate([predictions[0], pred], axis=0)
-                    predictions[1] = np.concatenate([predictions[1], z], axis=0)
-                    if labels:
-                        y_true = np.concatenate([y_true, y.cpu().numpy()], axis=0)
+                if labels:
+                    correct_predictions += (pred == y.long()).sum().item()
+                    data_size += x.shape[0]
+
+                if return_predictions:
+                    if predictions is None:
+                        predictions = [pred.cpu().numpy(), z.cpu().numpy()]
+                    else:
+                        predictions[0] = np.concatenate([predictions[0], pred], axis=0)
+                        predictions[1] = np.concatenate([predictions[1], z], axis=0)
 
             if labels:
-                accuracy = (predictions[0] == y_true).mean().item()
-                return {'predictions': predictions, 'acc': accuracy}
+                accuracy = correct_predictions/data_size
+                if return_predictions:
+                    return {'predictions': predictions, 'acc': accuracy}
+                else:
+                    return {'acc': accuracy}
             else:
                 return {'predictions': predictions}
 

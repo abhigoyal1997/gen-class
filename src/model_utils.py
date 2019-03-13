@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.nn as nn
 
 from src.classifier import Classifier
 from src.generator import Generator
@@ -36,6 +37,12 @@ def read_config(config_file):
     return config
 
 
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        torch.nn.init.xavier_uniform_(m.weight)
+        # m.bias.data.fill_(0.01)
+
+
 def create_model(config, cuda=True):
     if config[0][0] == 'gc':
         generator = load_model(config[2][0], False)
@@ -48,9 +55,10 @@ def create_model(config, cuda=True):
         exit(0)
 
     if cuda:
-        return model.cuda()
-    else:
-        return model
+        model.cuda()
+
+    # model.apply(init_weights)
+    return model
 
 
 def load_model(model_path, cuda, weights=True):
@@ -73,6 +81,7 @@ def read_hparams(spec_file):
         'batch_size',
         'num_epochs',
         'train_ratio',
+        'lr',
         'num_workers'
     ]
     hparams = {}

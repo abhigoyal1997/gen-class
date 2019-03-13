@@ -7,7 +7,7 @@ from src.training import train
 from src.testing import test
 from src.model_utils import read_config, read_hparams, load_model, create_model
 
-RANDOM_SEED = 1234
+RANDOM_SEED = 12345
 
 
 def main(args):
@@ -29,6 +29,8 @@ def main(args):
         print('Loading data...', flush=True)
         if config[0][0] == 'gc':
             dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED)
+        elif model.config[0][0] == 'c':
+            dataset = Dataset(args.data_file, image_size=model.image_size, masks=model.use_masks, mask_only=model.use_masks, size=args.ds)
         else:
             dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, mask_only=True, size=args.ds)
 
@@ -62,14 +64,14 @@ def parse_args():
     parser_train.add_argument('model_path')
     parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
     parser_train.add_argument('-c','--comment',dest='comment',default=None)
-    parser_train.add_argument('-d','--data-file',dest='data_file',default='data/train_data.csv')
+    parser_train.add_argument('-d','--data-file',dest='data_file',default='data/mixed_train.csv')
     parser_train.add_argument('-ds','--train-size',dest='ds',default=None,type=int)
     parser_train.add_argument('-ms','--num-masks',dest='ms',default=None,type=int)
     parser_train.add_argument('-s','--train-specs',dest='train_specs',default='train_specs.txt')
 
     parser_test = subparsers.add_parser('test')
     parser_test.add_argument('model_path')
-    parser_test.add_argument('-d','--data-file',dest='data_file',default='data/test_data2.csv')
+    parser_test.add_argument('-d','--data-file',dest='data_file',default='data/mixed_test.csv')
     parser_test.add_argument('-i','--test-init',dest='test_init',default=False,action='store_true')
 
     args = parser.parse_args()

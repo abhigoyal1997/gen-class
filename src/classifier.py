@@ -21,11 +21,11 @@ class Classifier(nn.Module):
         i += 1
         self.use_masks = (config[i][0] == 1)
         if self.use_masks:
-            self.crop_size = config[i][1:]
+            self.crop_size = config[i][1]
         else:
-            self.crop_size = self.image_size
+            self.crop_size = self.image_size[0]
 
-        x = torch.rand(1, self.in_channels, *self.crop_size)
+        x = torch.rand(2, self.in_channels, self.crop_size, self.crop_size)
         self.layers = nn.ModuleList()
         i += 1
         while i < len(config):
@@ -35,14 +35,19 @@ class Classifier(nn.Module):
             i += 1
 
         self.is_cuda = False
+        self.crop_filter = torch.ones(1,1,1,self.crop_size)
+        self.crop_filter_t = self.crop_filter.transpose(-2,-1)
 
     def cuda(self, device=None):
         self.is_cuda = True
+        self.crop_filter = self.crop_filter.cuda()
+        self.crop_filter_t = self.crop_filter_t.cuda()
         return super(Classifier, self).cuda(device)
 
     def forward(self, x, z=None, debug=False):
         if self.use_masks and z is not None:
-            x = crop_images(x,z, self.crop_size, self.is_cuda)
+            x = self.crop_images(x,z)
+            # x = crop_images_old(x, z, self.crop_size, self.is_cuda)
 
         if debug:
             outputs = [x]
@@ -55,6 +60,24 @@ class Classifier(nn.Module):
             return x, outputs
         else:
             return x
+
+    def crop_images(self, x, z):
+        # zf = F.conv1d(z,self.crop_filter)
+        # zf = F.conv1d(z,self.crop_filter_t)
+        # zf = (zf == zf.max(-1,keepdim=True)[0].max(-2,keepdim=True)[0])
+        # nz = [zf[i].nonzero() for i in range(zf.shape[0])]
+        # p = [k[k.shape[0]//2][1:].min(torch.Tensor([z.shape[-2]-self.crop_size, z.shape[-1]-self.crop_size]).cuda().long()) for k in nz]
+        # xf = torch.stack([x[i,:,p[i][0]:p[i][0]+self.crop_size,p[i][1]:p[i][1]+self.crop_size] for i in range(zf.shape[0])])
+        zf = F.conv1d(z,self.crop_filter)
+        zf = F.conv1d(zf,self.crop_filter_t)
+        _,zi = zf.view(zf.shape[0],-1).max(-1,keepdim=True)
+        py,px = zi//zf.shape[-1],zi%zf.shape[-1]
+        xf = torch.stack([x[i,:,py[i]:py[i]+self.crop_size,px[i]:px[i]+self.crop_size] for i in range(zf.shape[0])])
+        # zi = zf.view(zf.shape[0],-1).argmax(-1)
+        # py = (zi//zf.shape[-1]).min(torch.Tensor([z.shape[-2]-self.crop_size]).cuda().long())
+        # px = (zi%zf.shape[-1]).min(torch.Tensor([z.shape[-1]-self.crop_size]).cuda().long())
+        # xf = torch.stack([x[i,:,py[i]:py[i]+self.crop_size,px[i]:px[i]+self.crop_size] for i in range(zf.shape[0])])
+        return xf
 
     def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
         if mode == 'train':
@@ -155,36 +178,7 @@ class Classifier(nn.Module):
                 return {'predictions': predictions}
 
 
-def find_attention_xy(z):
-    size = 0
-    # tx, ty, bx, by = 0, 0, 0, 0
-    # import pudb; pudb.set_trace()
-    p = np.asarray([
-        [np.min(c.squeeze(axis=1),axis=0), np.max(c.squeeze(axis=1),axis=0)] for c in cv.findContours(z,cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[1]
-    ])
-    size = p[:,1,:]-p[:,0,:]
-    i = np.argmax(size[:,0]*size[:,1])
-    # for cnt in contours:
-    #     cnt = np.squeeze(cnt, axis=1)
-    #     x1, y1 = np.min(cnt, axis=0)
-    #     x2, y2 = np.max(cnt, axis=0)
-    #     if (y2 - y1) * (x2 - x1) > size:
-    #         tx, ty = x1, y1
-    #         bx, by = x2, y2
-    #         size = (y2 - y1) * (x2 - x1)
-    return [p[i,0,0], p[i,0,1], p[i,1,0], p[i,1,1]]
-
-
-def get_attention_img(img, mask, sz=(80,80)):
-    cnt = cv.findContours(mask,cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[1]
-    tx, ty, bx, by = find_attention_xy(cnt)
-    if not (tx == 0 and ty == 0 and bx == 0 and by == 0):
-        img = img[:, ty:by, tx:bx]
-
-    return F.interpolate(img.unsqueeze(0), size=sz, mode='bilinear', align_corners=True)
-
-
-def crop_images(img, mask, sz=(80,80), cuda=True):
+def crop_images_old(img, mask, sz=(80,80), cuda=True):
     mask = mask.byte().squeeze().cpu().numpy()
     cnt = [cv.findContours(x,cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[1] for x in mask]
     pts = [torch.Tensor([[np.min(ci.squeeze(axis=1),axis=0), np.max(ci.squeeze(axis=1),axis=0)] for ci in c]).int() for c in cnt]
