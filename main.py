@@ -64,14 +64,16 @@ def parse_args():
     parser_train.add_argument('model_path')
     parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
     parser_train.add_argument('-c','--comment',dest='comment',default=None)
-    parser_train.add_argument('-d','--data-file',dest='data_file',default='data/ddsm/train.csv')
+    parser_train.add_argument('-d','--data-root',dest='data_root',default='/data1/abhinav/ddsm/train')
+    parser_train.add_argument('-dm','--meta-data-file',dest='meta_data_file',default='data/ddsm/train.csv')
     parser_train.add_argument('-ds','--train-size',dest='ds',default=None,type=int)
     parser_train.add_argument('-ms','--num-masks',dest='ms',default=None,type=int)
     parser_train.add_argument('-s','--train-specs',dest='train_specs',default='train_specs.txt')
 
     parser_test = subparsers.add_parser('test')
     parser_test.add_argument('model_path')
-    parser_test.add_argument('-d','--data-file',dest='data_file',default='data/ddsm/test.csv')
+    parser_test.add_argument('-d','--data-root',dest='data_root',default='/data1/abhinav/ddsm/test')
+    parser_test.add_argument('-dm','--meta-data-file',dest='meta_data_file',default='data/ddsm/test.csv')
     parser_test.add_argument('-i','--test-init',dest='test_init',default=False,action='store_true')
 
     args = parser.parse_args()
