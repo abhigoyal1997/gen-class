@@ -1,9 +1,10 @@
+import os
+import cv2 as cv
 import numpy as np
 import torch
 import pandas as pd
+import pydicom
 
-from PIL import Image
-from torchvision import transforms
 from torch.utils.data import Dataset, Sampler
 
 
@@ -48,31 +49,19 @@ class SBatchSampler(Sampler):
         return self.len
 
 
-class BloodCellsDataset(Dataset):
-    def __init__(self, meta_file, image_size, augment=False, masks=True, size=None, num_masks=None, random_seed=1234, mask_only=False):
+class DDSMDataset(Dataset):
+    def __init__(self, data_root, meta_file, image_size, augment=False, masks=True, size=None, num_masks=None, random_seed=1234, mask_only=False):
         super(Dataset, self).__init__()
         self.augment = augment
         self.image_size = image_size
         self.masks = masks
-        self.post_transform = transforms.ToTensor()
         self.mask_only = mask_only
+        self.data_root = data_root
 
         self.df = pd.read_csv(meta_file)
 
-        if mask_only:
-            self.df = self.df[self.df.mask_path != 'none'].sample(frac=1, random_state=random_seed).reset_index(drop=True)
-            self.num_masks = len(self.df)
-        elif masks:
-            self.df = pd.concat([
-                self.df[self.df.mask_path != 'none'].sample(frac=1, random_state=random_seed),
-                self.df[self.df.mask_path == 'none'].sample(frac=1, random_state=random_seed),
-            ]).reset_index(drop=True)
-
-            self.num_masks = (self.df.mask_path != 'none').sum()
-            if num_masks is not None:
-                self.num_masks = min(num_masks, self.num_masks)
-        else:
-            self.num_masks = None
+        self.df = self.df.sample(frac=1, random_state=random_seed).reset_index(drop=True)
+        self.num_masks = len(self.df)
 
         if size is not None:
             self.df = self.df.iloc[:size]
@@ -84,54 +73,46 @@ class BloodCellsDataset(Dataset):
         print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks if self.num_masks is not None else 0))
 
     def transformation(self, imgs):
-        for i in range(len(imgs)):
-            imgs[i] = transforms.functional.resize(imgs[i], self.image_size)
-
         if self.augment:
             img_sz = (int(1.1*self.image_size[0]), int(1.1*self.image_size[1]))
             for i in range(len(imgs)):
-                imgs[i] = transforms.functional.resize(imgs[i], img_sz)
+                imgs[i] = cv.resize(imgs[i], dsize=img_sz[::-1], interpolation=cv.INTER_LINEAR)
 
             if self.train:
-                params = transforms.RandomCrop.get_params(imgs[0], output_size=self.image_size)
-                for i in range(len(imgs)):
-                    imgs[i] = transforms.functional.crop(imgs[i], *params)
-                params = transforms.RandomRotation.get_params((-30,30))
-                for i in range(len(imgs)):
-                    imgs[i] = transforms.functional.rotate(imgs[i], params)
+                px = np.random.randint(0,img_sz[1]-self.image_size[1])
+                py = np.random.randint(0,img_sz[0]-self.image_size[0])
             else:
-                for i in range(len(imgs)):
-                    imgs[i] = transforms.functional.center_crop(imgs[i], self.image_size)
+                px = img_sz[1]//2 - self.image_size[1]//2
+                py = img_sz[0]//2 - self.image_size[0]//2
 
-            if self.train:
+            for i in range(len(imgs)):
+                imgs[i] = imgs[i][py:py+self.image_size[0],px:px+self.image_size[1]]
+
                 if np.random.rand() > 0.5:
                     for i in range(len(imgs)):
-                        imgs[i] = transforms.functional.hflip(imgs[i])
-
-        if self.post_transform is not None:
+                        imgs[i] = np.fliplr(imgs[i])
+        else:
             for i in range(len(imgs)):
-                imgs[i] = self.post_transform(imgs[i])
-        return imgs
+                imgs[i] = cv.resize(imgs[i], dsize=self.image_size[::-1], interpolation=cv.INTER_LINEAR)
 
-    def get_label_id(self, label):
-        LABEL_IDS = {
-            'NEUTROPHIL': 0,
-            'EOSINOPHIL': 1,
-            'LYMPHOCYTE': 2,
-            'MONOCYTE': 3
-        }
-        return LABEL_IDS[label]
+        for i in range(len(imgs)):
+            imgs[i] = torch.Tensor(imgs[i].astype(np.float))
+        imgs[0] /= 65535
+        if len(imgs) == 1:
+            imgs[1] = (imgs[1]>0)
+
+        return imgs
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, index):
         d = self.df.iloc[[index]].get_values()[0]
-        x = Image.open(d[0])
-        y = self.get_label_id(d[-1])
+        x = pydicom.read_file(os.path.join(self.data_root, 'images', d[0])).pixel_array
+        y = d[-1]
         if self.masks:
             if index < self.num_masks:
-                z = Image.open(d[1])
+                z = pydicom.read_file(os.path.join(self.data_root, 'masks', d[1])).pixel_array
                 x,z = self.transformation([x,z])
                 m = 1
             else:
