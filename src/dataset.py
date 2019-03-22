@@ -1,9 +1,7 @@
-import os
-import cv2 as cv
 import numpy as np
 import torch
-import pandas as pd
-import pydicom
+import h5py
+import cv2 as cv
 
 from torch.utils.data import Dataset, Sampler
 
@@ -50,27 +48,45 @@ class SBatchSampler(Sampler):
 
 
 class DDSMDataset(Dataset):
-    def __init__(self, data_root, meta_file, image_size, augment=False, masks=True, size=None, num_masks=None, random_seed=1234, mask_only=False):
+    def __init__(self, h5_file, batch_size, image_size=None, augment=False, masks=True, size=None, num_masks=None, random_seed=1234, mask_only=False):
         super(Dataset, self).__init__()
+        self.is_init = False
         self.augment = augment
         self.image_size = image_size
         self.masks = masks
         self.mask_only = mask_only
-        self.data_root = data_root
+        self.file = h5_file
+        self.batch_size = batch_size
+        with h5py.File(h5_file, 'r') as hf:
+            if size is None:
+                self.size = hf['y'].shape[0]
+            else:
+                self.size = min(size, hf['y'].shape[0])
 
-        self.df = pd.read_csv(meta_file)
-
-        self.df = self.df.sample(frac=1, random_state=random_seed).reset_index(drop=True)
-        self.num_masks = len(self.df)
-
-        if size is not None:
-            self.df = self.df.iloc[:size]
+        self.batch_size = min(self.batch_size, self.size)
+        if num_masks is None:
+            self.num_masks = self.size
+        else:
+            self.num_masks = min(self.size, num_masks)
 
         if masks:
-            self.num_masks = min(len(self.df), self.num_masks)
-            self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
+            self.num_masks = min(self.size, self.num_masks)
+            self.masks_idx = [1]*self.num_masks + [0]*(self.size - self.num_masks)
+        print('Loaded {} instances with {} masks!'.format(self.size, self.num_masks if self.num_masks is not None else 0))
 
-        print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks if self.num_masks is not None else 0))
+    def init(self):
+        data = h5py.File(self.file, 'r')
+
+        self.x = data['x']
+        self.y = data['y']
+        self.z = data['z']
+
+        if self.image_size is None:
+            self.image_size = tuple(self.x[0].shape)
+        else:
+            self.image_size = tuple(self.image_size)
+
+        self.is_init = True
 
     def transformation(self, imgs):
         if self.augment:
@@ -78,7 +94,7 @@ class DDSMDataset(Dataset):
             for i in range(len(imgs)):
                 imgs[i] = cv.resize(imgs[i], dsize=img_sz[::-1], interpolation=cv.INTER_LINEAR)
 
-            if self.train:
+            if self.train:  # FIXME: self.train doesn't exist
                 px = np.random.randint(0,img_sz[1]-self.image_size[1])
                 py = np.random.randint(0,img_sz[0]-self.image_size[0])
             else:
@@ -91,35 +107,33 @@ class DDSMDataset(Dataset):
                 if np.random.rand() > 0.5:
                     for i in range(len(imgs)):
                         imgs[i] = np.fliplr(imgs[i])
-        else:
-            for i in range(len(imgs)):
-                imgs[i] = cv.resize(imgs[i], dsize=self.image_size[::-1], interpolation=cv.INTER_LINEAR)
 
         for i in range(len(imgs)):
-            imgs[i] = torch.Tensor(imgs[i].astype(np.float))
+            imgs[i] = torch.Tensor(imgs[i].astype(np.float)).unsqueeze(0)
         imgs[0] /= 65535
-        if len(imgs) == 1:
-            imgs[1] = (imgs[1]>0)
+        if len(imgs) == 2:
+            imgs[1] = (imgs[1]>0).float()
 
         return imgs
 
     def __len__(self):
-        return len(self.df)
+        return self.size
 
     def __getitem__(self, index):
-        d = self.df.iloc[[index]].get_values()[0]
-        x = pydicom.read_file(os.path.join(self.data_root, 'images', d[0])).pixel_array
-        y = d[-1]
+        if not self.is_init:
+            self.init()
+
+        x = self.x[index].T
+        y = self.y[index]
         if self.masks:
             if index < self.num_masks:
-                z = pydicom.read_file(os.path.join(self.data_root, 'masks', d[1])).pixel_array
+                z = self.z[index].T
                 x,z = self.transformation([x,z])
                 m = 1
             else:
-                x = self.transformation([x])[0]
                 z = torch.ones(1,*self.image_size)
+                x = self.transformation([x])[0]
                 m = 0
             return [x,y,z,m]
         else:
-            x = self.transformation([x])[0]
             return [x,y]

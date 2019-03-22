@@ -1,4 +1,4 @@
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import random_split, DataLoader
 from torch.optim import Adam
 from tensorboardX import SummaryWriter
 from time import time
@@ -14,8 +14,7 @@ def train(model, hparams, dataset, model_path=None, log_interval=None):
     lr = hparams['lr']
 
     train_size = int(train_ratio*len(dataset))
-    train_set = Subset(dataset, list(range(train_size)))
-    valid_set = Subset(dataset, list(range(train_size, len(dataset))))
+    train_set, valid_set = random_split(dataset, [train_size, len(dataset)-train_size])
 
     if model.config[0][0] != 'gc':
         train_batches = DataLoader(train_set, batch_size=batch_size, num_workers=num_workers, shuffle=True, drop_last=True)
