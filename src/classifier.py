@@ -22,10 +22,11 @@ class Classifier(nn.Module):
         self.use_masks = (config[i][0] == 1)
         if self.use_masks:
             self.crop_size = config[i][1]
-        else:
-            self.crop_size = self.image_size[0]
 
-        x = torch.rand(2, self.in_channels, self.crop_size, self.crop_size)
+        if self.use_masks:
+            x = torch.rand(2, self.in_channels, self.crop_size, self.crop_size)
+        else:
+            x = torch.rand(2, self.in_channels, *self.image_size)
         self.layers = nn.ModuleList()
         i += 1
         while i < len(config):
@@ -34,14 +35,18 @@ class Classifier(nn.Module):
                 x = self.layers[-1](x)
             i += 1
 
+        self.out_features = x.size(1)
+
         self.is_cuda = False
-        self.crop_filter = torch.ones(1,1,1,self.crop_size)
-        self.crop_filter_t = self.crop_filter.transpose(-2,-1)
+        if self.use_masks:
+            self.crop_filter = torch.ones(1,1,1,self.crop_size)
+            self.crop_filter_t = self.crop_filter.transpose(-2,-1)
 
     def cuda(self, device=None):
         self.is_cuda = True
-        self.crop_filter = self.crop_filter.cuda()
-        self.crop_filter_t = self.crop_filter_t.cuda()
+        if self.use_masks:
+            self.crop_filter = self.crop_filter.cuda()
+            self.crop_filter_t = self.crop_filter_t.cuda()
         return super(Classifier, self).cuda(device)
 
     def forward(self, x, z=None, debug=False):
@@ -92,7 +97,7 @@ class Classifier(nn.Module):
         for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
             if self.is_cuda:
                 for k in range(len(data)):
-                    data[k] = data[k].cuda()
+                    data[k] = data[k].cuda().float()
             if len(data) > 2:
                 x,y,z = data[:3]
             else:
@@ -117,8 +122,11 @@ class Classifier(nn.Module):
 
             # Update metrics
             loss += batch_loss.item()
-            predictions = torch.argmax(logits, dim=1)
-            correct_predictions += (predictions == y.long()).sum().item()
+            if self.out_features == 1:
+                predictions = torch.ge(torch.sigmoid(logits), 0.5)
+            else:
+                predictions = torch.argmax(logits, dim=1)
+            correct_predictions += (predictions.long() == y.long()).sum().item()
             data_size += x.shape[0]
 
             if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
@@ -134,7 +142,10 @@ class Classifier(nn.Module):
         return {'loss': loss, 'acc': accuracy}
 
     def get_criterion(self):
-        return nn.CrossEntropyLoss()
+        if self.out_features == 1:
+            return nn.BCEWithLogitsLoss()
+        else:
+            return nn.CrossEntropyLoss()
 
     def predict(self, batches, labels=True):
         predictions = None
@@ -163,16 +174,23 @@ class Classifier(nn.Module):
 
                 # Update metrics
                 if predictions is None:
-                    predictions = torch.argmax(logits,dim=1)
+                    if self.out_features == 1:
+                        predictions = torch.ge(torch.sigmoid(logits), 0.5)
+                    else:
+                        predictions = torch.argmax(logits, dim=1)
                     if labels:
                         y_true = y
                 else:
-                    predictions = torch.cat([predictions, torch.argmax(logits,dim=1)])
+                    if self.out_features == 1:
+                        preds = torch.ge(torch.sigmoid(logits), 0.5)
+                    else:
+                        preds = torch.argmax(logits, dim=1)
+                    predictions = torch.cat([predictions, preds])
                     if labels:
                         y_true = torch.cat([y_true, y])
 
             if labels:
-                accuracy = (predictions == y_true.long()).double().mean().item()
+                accuracy = (predictions.long() == y_true.long()).double().mean().item()
                 return {'predictions': predictions, 'acc': accuracy}
             else:
                 return {'predictions': predictions}
