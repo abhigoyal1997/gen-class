@@ -16,17 +16,16 @@ class Classifier(nn.Module):
 
         i = 1
         self.in_channels = config[i][0]
-        self.image_size = config[i][1:]
+        self.image_size = tuple(config[i][1:])
 
         i += 1
         self.use_masks = (config[i][0] == 1)
         if self.use_masks:
             self.crop_size = config[i][1]
+            self.crop_filter = torch.ones(1,1,1,self.crop_size)
+            self.crop_filter_t = self.crop_filter.transpose(-2,-1)
 
-        if self.use_masks:
-            x = torch.rand(2, self.in_channels, self.crop_size, self.crop_size)
-        else:
-            x = torch.rand(2, self.in_channels, *self.image_size)
+        x = torch.rand(2, self.in_channels, *self.image_size)
         self.layers = nn.ModuleList()
         i += 1
         while i < len(config):
@@ -36,11 +35,9 @@ class Classifier(nn.Module):
             i += 1
 
         self.out_features = x.size(1)
+        print(self.out_features)
 
         self.is_cuda = False
-        if self.use_masks:
-            self.crop_filter = torch.ones(1,1,1,self.crop_size)
-            self.crop_filter_t = self.crop_filter.transpose(-2,-1)
 
     def cuda(self, device=None):
         self.is_cuda = True
@@ -52,7 +49,9 @@ class Classifier(nn.Module):
     def forward(self, x, z=None, debug=False):
         if self.use_masks and z is not None:
             x = self.crop_images(x,z)
-            # x = crop_images_old(x, z, self.crop_size, self.is_cuda)
+
+        if x.shape[2:] != self.image_size:
+            x = F.interpolate(x, size=self.image_size, mode='bilinear')
 
         if debug:
             outputs = [x]
@@ -67,21 +66,11 @@ class Classifier(nn.Module):
             return x
 
     def crop_images(self, x, z):
-        # zf = F.conv1d(z,self.crop_filter)
-        # zf = F.conv1d(z,self.crop_filter_t)
-        # zf = (zf == zf.max(-1,keepdim=True)[0].max(-2,keepdim=True)[0])
-        # nz = [zf[i].nonzero() for i in range(zf.shape[0])]
-        # p = [k[k.shape[0]//2][1:].min(torch.Tensor([z.shape[-2]-self.crop_size, z.shape[-1]-self.crop_size]).cuda().long()) for k in nz]
-        # xf = torch.stack([x[i,:,p[i][0]:p[i][0]+self.crop_size,p[i][1]:p[i][1]+self.crop_size] for i in range(zf.shape[0])])
         zf = F.conv1d(z,self.crop_filter)
         zf = F.conv1d(zf,self.crop_filter_t)
         _,zi = zf.view(zf.shape[0],-1).max(-1,keepdim=True)
         py,px = zi//zf.shape[-1],zi%zf.shape[-1]
         xf = torch.stack([x[i,:,py[i]:py[i]+self.crop_size,px[i]:px[i]+self.crop_size] for i in range(zf.shape[0])])
-        # zi = zf.view(zf.shape[0],-1).argmax(-1)
-        # py = (zi//zf.shape[-1]).min(torch.Tensor([z.shape[-2]-self.crop_size]).cuda().long())
-        # px = (zi%zf.shape[-1]).min(torch.Tensor([z.shape[-1]-self.crop_size]).cuda().long())
-        # xf = torch.stack([x[i,:,py[i]:py[i]+self.crop_size,px[i]:px[i]+self.crop_size] for i in range(zf.shape[0])])
         return xf
 
     def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
@@ -92,6 +81,9 @@ class Classifier(nn.Module):
 
         loss = 0.0
         correct_predictions = 0
+        true_positives = 0
+        false_negatives = 0
+        false_positives = 0
         data_size = 0
         i = 0
         for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
@@ -103,6 +95,7 @@ class Classifier(nn.Module):
             else:
                 x,y = data
                 z = None
+            # x = x.float()
 
             if mode == 'train':
                 optimizer.zero_grad()
@@ -124,6 +117,9 @@ class Classifier(nn.Module):
             loss += batch_loss.item()
             if self.out_features == 1:
                 predictions = torch.ge(torch.sigmoid(logits), 0.5)
+                true_positives += (predictions[y.byte()] == 1).sum().item()
+                false_negatives += (predictions[y.byte()] == 0).sum().item()
+                false_positives += (predictions[1 - y.byte()] == 0).sum().item()
             else:
                 predictions = torch.argmax(logits, dim=1)
             correct_predictions += (predictions.long() == y.long()).sum().item()
@@ -135,11 +131,21 @@ class Classifier(nn.Module):
 
         loss = loss/len(batches)
         accuracy = correct_predictions/data_size
+        if self.out_features == 1:
+            recall = true_positives/(true_positives+false_negatives)
+            precision = true_positives/(true_positives+false_positives)
         if writer is not None:
             writer.add_scalar('c/{}_acc'.format(mode), accuracy, epoch)
             if mode == 'valid':
                 writer.add_scalar('c/{}_loss'.format(mode), loss, epoch)
-        return {'loss': loss, 'acc': accuracy}
+            if self.out_features == 1:
+                writer.add_scalar('c/{}_recall'.format(mode), recall, epoch)
+                writer.add_scalar('c/{}_precision'.format(mode), precision, epoch)
+
+        if self.out_features == 1:
+            return {'loss': loss, 'acc': accuracy, 'recall': recall, 'precision': precision}
+        else:
+            return {'loss': loss, 'acc': accuracy}
 
     def get_criterion(self):
         if self.out_features == 1:

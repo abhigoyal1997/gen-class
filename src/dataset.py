@@ -57,6 +57,7 @@ class DDSMDataset(Dataset):
         self.mask_only = mask_only
         self.file = h5_file
         self.batch_size = batch_size
+        self.training = False
         with h5py.File(h5_file, 'r') as hf:
             if size is None:
                 self.size = hf['y'].shape[0]
@@ -71,7 +72,9 @@ class DDSMDataset(Dataset):
 
         if masks:
             self.num_masks = min(self.size, self.num_masks)
-            self.masks_idx = [1]*self.num_masks + [0]*(self.size - self.num_masks)
+        else:
+            self.num_masks = 0
+        self.masks_idx = [1]*self.num_masks + [0]*(self.size - self.num_masks)
         print('Loaded {} instances with {} masks!'.format(self.size, self.num_masks if self.num_masks is not None else 0))
 
     def init(self):
@@ -82,11 +85,17 @@ class DDSMDataset(Dataset):
         self.z = data['z']
 
         if self.image_size is None:
-            self.image_size = tuple(self.x[0].shape)
+            self.image_size = tuple(self.x[0].T.shape)
         else:
             self.image_size = tuple(self.image_size)
 
         self.is_init = True
+
+    def train(self):
+        self.training = True
+
+    def eval(self):
+        self.training = False
 
     def transformation(self, imgs):
         if self.augment:
@@ -94,7 +103,7 @@ class DDSMDataset(Dataset):
             for i in range(len(imgs)):
                 imgs[i] = cv.resize(imgs[i], dsize=img_sz[::-1], interpolation=cv.INTER_LINEAR)
 
-            if self.train:  # FIXME: self.train doesn't exist
+            if self.training:
                 px = np.random.randint(0,img_sz[1]-self.image_size[1])
                 py = np.random.randint(0,img_sz[0]-self.image_size[0])
             else:
@@ -109,6 +118,8 @@ class DDSMDataset(Dataset):
                         imgs[i] = np.fliplr(imgs[i])
 
         for i in range(len(imgs)):
+            if imgs[i].shape != self.image_size:
+                imgs[i] = cv.resize(imgs[i], dsize=self.image_size[::-1], interpolation=cv.INTER_LINEAR)
             imgs[i] = torch.Tensor(imgs[i].astype(np.float)).unsqueeze(0)
         imgs[0] /= 65535
         if len(imgs) == 2:
@@ -136,4 +147,5 @@ class DDSMDataset(Dataset):
                 m = 0
             return [x,y,z,m]
         else:
+            x = self.transformation([x])[0]
             return [x,y]

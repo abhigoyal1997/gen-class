@@ -38,9 +38,11 @@ def read_config(config_file):
 
 
 def init_weights(m):
-    if isinstance(m, nn.Linear):
+    try:
         torch.nn.init.xavier_uniform_(m.weight)
-        # m.bias.data.fill_(0.01)
+        m.bias.data.fill_(0.01)
+    except AttributeError:
+        pass
 
 
 def create_model(config, cuda=True):

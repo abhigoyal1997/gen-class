@@ -34,10 +34,12 @@ def train(model, hparams, dataset, model_path=None, log_interval=None):
     best_loss = None
     for epoch in range(num_epochs):
         # Train
+        dataset.train()
         metrics = model.run_epoch('train', train_batches, criterion=criterion, optimizer=optimizer, epoch=epoch, writer=writer, log_interval=log_interval)
         print('Train: {}'.format(metrics))
 
         # Validate
+        dataset.eval()
         metrics = model.run_epoch('valid', valid_batches, criterion=criterion, epoch=epoch, writer=writer, log_interval=log_interval)
         print('Validation: {}'.format(metrics))
 

@@ -80,8 +80,8 @@ class Generator(nn.Module):
             self.eval()
 
         loss = 0.0
-        predictions = None
-        z_true = None
+        dice = 0.0
+        data_size = 0
         i = 0
         for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
             if len(data) > 2:
@@ -113,19 +113,18 @@ class Generator(nn.Module):
 
             # Update metrics
             loss += batch_loss.item()
-            if predictions is None:
-                predictions = torch.sigmoid(logits)
-                z_true = z
-            else:
-                predictions = torch.cat([predictions, torch.sigmoid(logits)])
-                z_true = torch.cat([z_true, z])
+            p = torch.sigmoid(logits).view(logits.size(0),-1)
+            z = z.view(z.size(0),-1)
+
+            dice += (2*(p*z).sum(dim=1)/((p**2).sum(dim=1) + (z**2).sum(dim=1))).sum().item()
+            data_size += x.shape[0]
 
             if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
                 writer.add_scalar('g/{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
             i += 1
 
         loss = loss/len(batches)
-        dice = soft_dice(predictions, z_true.float())
+        dice = dice/data_size
         if writer is not None:
             writer.add_scalar('g/{}_dice'.format(mode), dice, epoch)
             if mode == 'valid':

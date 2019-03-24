@@ -30,7 +30,7 @@ def main(args):
         if config[0][0] == 'gc':
             dataset = Dataset(args.data_file, hparams['batch_size'], image_size=model.image_size, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED)
         elif model.config[0][0] == 'c':
-            dataset = Dataset(args.data_file, hparams['batch_size'], image_size=model.image_size, masks=model.use_masks, mask_only=model.use_masks, size=args.ds)
+            dataset = Dataset(args.data_file, hparams['batch_size'], image_size=None, masks=model.use_masks, mask_only=model.use_masks, size=args.ds)
         else:
             dataset = Dataset(args.data_file, hparams['batch_size'], image_size=model.image_size, masks=True, mask_only=True, size=args.ds)
         hparams['batch_size'] = dataset.batch_size
@@ -48,9 +48,9 @@ def main(args):
 
         print('Loading data...', flush=True)
         if model.config[0][0] == 'gc':
-            dataset = Dataset(args.data_file, args.meta_data_file, image_size=model.image_size, masks=False)
+            dataset = Dataset(args.data_file, 32, image_size=model.image_size, masks=False)
         else:
-            dataset = Dataset(args.data_file, args.meta_data_file, image_size=model.image_size, masks=True, mask_only=True)
+            dataset = Dataset(args.data_file, 32, image_size=model.image_size, masks=True, mask_only=True)
 
         print('Testing model...', flush=True)
         test(model, dataset, args.model_path)
@@ -65,14 +65,14 @@ def parse_args():
     parser_train.add_argument('model_path')
     parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
     parser_train.add_argument('-c','--comment',dest='comment',default=None)
-    parser_train.add_argument('-d','--data-file',dest='data_file',default='/data1/abhinav/ddsm/train_data.h5')
-    parser_train.add_argument('-ds','--train-size',dest='ds',default=None,type=int)
+    parser_train.add_argument('-d','--data-file',dest='data_file',default='data/ddsm/train_data.h5')
+    parser_train.add_argument('-ds','--train-size',dest='ds',default=None)
     parser_train.add_argument('-ms','--num-masks',dest='ms',default=None,type=int)
     parser_train.add_argument('-s','--train-specs',dest='train_specs',default='train_specs.txt')
 
     parser_test = subparsers.add_parser('test')
     parser_test.add_argument('model_path')
-    parser_test.add_argument('-d','--data-file',dest='data_file',default='/data1/abhinav/ddsm/test_data.h5')
+    parser_test.add_argument('-d','--data-file',dest='data_file',default='data/ddsm/test_data.h5')
     parser_test.add_argument('-i','--test-init',dest='test_init',default=False,action='store_true')
 
     args = parser.parse_args()
@@ -83,15 +83,16 @@ def parse_args():
     else:
         args.command = 'predict'
 
-    if '0' in args.device:
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    try:
+        args.ds = int(args.ds)
+    except Exception as e:
+        args.ds = None
+
+    try:
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(int(args.device))
         args.cuda = True
-        print('Using cuda:0')
-    elif '1' in args.device:
-        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-        args.cuda = True
-        print('Using cuda:1')
-    else:
+        print(f'Using cuda:{args.device}')
+    except Exception:
         args.cuda = False
         print('Not using cuda!')
 
