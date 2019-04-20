@@ -61,7 +61,7 @@ class Classifier(nn.Module):
             grid = F.affine_grid(transform, (*x.shape[:2], self.image_size, self.image_size))
             x = F.grid_sample(x, grid, padding_mode='border')
 
-            y = torch.cat([y]*(x.size(0)//y.size(0))).long()
+            y = torch.cat([y]*(x.size(0)//y.size(0)))
         else:
             scale_ratio = self.image_size/self.crop_size
             transform = torch.Tensor([[scale_ratio,0,0],[0,scale_ratio,0]]).cuda().expand(x.size(0),2,3)
@@ -114,9 +114,9 @@ class Classifier(nn.Module):
         grid = F.affine_grid(transform, (batch_size, 1, self.crop_size, self.crop_size))
         xf = F.grid_sample(x, grid, padding_mode='border')
 
-        return xf, y.long()
+        return xf, y
 
-    def run_epoch(self, mode, batches, epoch=None, criterion=None, optimizer=None, writer=None, log_interval=None):
+    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
         if mode == 'train':
             self.train()
         else:
@@ -124,17 +124,12 @@ class Classifier(nn.Module):
 
         loss = 0.0
         correct_predictions = 0
-        # true_positives = 0
-        # false_negatives = 0
-        # false_positives = 0
+        true_positives = 0
+        false_negatives = 0
+        false_positives = 0
         data_size = 0
         i = 0
-        if epoch is not None:
-            batches = tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches))
-        else:
-            batches = tqdm(batches, total=len(batches))
-
-        for data in batches:
+        for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
             if self.is_cuda:
                 for k in range(len(data)):
                     data[k] = data[k].cuda().float()
@@ -146,7 +141,6 @@ class Classifier(nn.Module):
                 x,y = data
                 if self.augment:
                     x,y = self.augment_batch(x,y)
-                y = y.long()
 
             batch_size = x.size(0)
 
@@ -167,22 +161,22 @@ class Classifier(nn.Module):
 
                     batch_loss += bi_loss.item()
                     if predictions is None:
-                        predictions = logits.argmax(-1)
+                        predictions = torch.ge(torch.sigmoid(logits), 0.5)
                     else:
-                        predictions = torch.cat([predictions, logits.argmax(-1)])
+                        predictions = torch.cat([predictions, torch.ge(torch.sigmoid(logits), 0.5)])
                 batch_loss /= bn
             else:
                 with torch.no_grad():
                     # Forward Pass
                     logits = self.forward(x).squeeze()
                     batch_loss = criterion(logits, y).item()
-                    predictions = logits.argmax(-1)
+                    predictions = torch.ge(torch.sigmoid(logits), 0.5)
 
             # Update metrics
             loss += batch_loss
-            # true_positives += (predictions[y.byte()] == 1).sum().item()
-            # false_negatives += (predictions[y.byte()] == 0).sum().item()
-            # false_positives += (predictions[1 - y.byte()] == 0).sum().item()
+            true_positives += (predictions[y.byte()] == 1).sum().item()
+            false_negatives += (predictions[y.byte()] == 0).sum().item()
+            false_positives += (predictions[1 - y.byte()] == 0).sum().item()
             correct_predictions += (predictions.long() == y.long()).sum().item()
             data_size += x.shape[0]
 
@@ -192,21 +186,21 @@ class Classifier(nn.Module):
 
         loss = loss/i
         accuracy = correct_predictions/data_size
-        # if self.out_features == 1:
-        #     recall = true_positives/(true_positives+false_negatives)
-        #     precision = true_positives/(true_positives+false_positives)
+        if self.out_features == 1:
+            recall = true_positives/(true_positives+false_negatives)
+            precision = true_positives/(true_positives+false_positives)
         if writer is not None:
             writer.add_scalar('c/{}_acc'.format(mode), accuracy, epoch)
             if mode == 'valid':
                 writer.add_scalar('c/{}_loss'.format(mode), loss, epoch)
-            # if self.out_features == 1:
-            #     writer.add_scalar('c/{}_recall'.format(mode), recall, epoch)
-            #     writer.add_scalar('c/{}_precision'.format(mode), precision, epoch)
+            if self.out_features == 1:
+                writer.add_scalar('c/{}_recall'.format(mode), recall, epoch)
+                writer.add_scalar('c/{}_precision'.format(mode), precision, epoch)
 
-        # if self.out_features == 1:
-        #     return {'loss': loss, 'acc': accuracy, 'recall': recall, 'precision': precision}
-        # else:
-        return {'loss': loss, 'acc': accuracy}
+        if self.out_features == 1:
+            return {'loss': loss, 'acc': accuracy, 'recall': recall, 'precision': precision}
+        else:
+            return {'loss': loss, 'acc': accuracy}
 
     def get_criterion(self, no_reduction=False):
         if no_reduction:

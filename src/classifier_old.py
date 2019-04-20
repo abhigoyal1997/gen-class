@@ -16,18 +16,16 @@ class Classifier(nn.Module):
 
         i = 1
         self.in_channels = config[i][0]
-        self.image_size = config[i][1]
+        self.image_size = config[i][1:]
 
         i += 1
         self.use_masks = (config[i][0] == 1)
         if self.use_masks:
             self.crop_size = config[i][1]
-            self.crop_filter = torch.ones(1,1,1,self.crop_size)
-            self.crop_filter_t = self.crop_filter.transpose(-2,-1)
-        i += 1
-        self.augment = (config[i][0] == 1)
+        else:
+            self.crop_size = self.image_size[0]
 
-        x = torch.rand(2, self.in_channels, self.image_size, self.image_size)
+        x = torch.rand(2, self.in_channels, self.crop_size, self.crop_size)
         self.layers = nn.ModuleList()
         i += 1
         while i < len(config):
@@ -36,41 +34,21 @@ class Classifier(nn.Module):
                 x = self.layers[-1](x)
             i += 1
 
-        self.out_features = x.size(1)
-
         self.is_cuda = False
+        self.crop_filter = torch.ones(1,1,1,self.crop_size)
+        self.crop_filter_t = self.crop_filter.transpose(-2,-1)
 
     def cuda(self, device=None):
         self.is_cuda = True
-        for layer in self.layers:
-            layer.cuda()
-        if self.use_masks:
-            self.crop_filter = self.crop_filter.cuda()
-            self.crop_filter_t = self.crop_filter_t.cuda()
+        self.crop_filter = self.crop_filter.cuda()
+        self.crop_filter_t = self.crop_filter_t.cuda()
         return super(Classifier, self).cuda(device)
 
-    def augment_batch(self, x, y):
-        if self.training:
-            x = torch.cat([x, x.flip(-1)])
+    def forward(self, x, z=None, debug=False):
+        if self.use_masks and z is not None:
+            x = self.crop_images(x,z)
+            # x = crop_images_old(x, z, self.crop_size, self.is_cuda)
 
-            scale_ratio = self.image_size/self.crop_size
-            scale = torch.Tensor([[scale_ratio,0],[0,scale_ratio]]).cuda()
-            translation = ((torch.rand(x.size(0),2)*2-1)*(1-scale_ratio)).cuda().unsqueeze(dim=-1)
-            transform = torch.cat([scale.expand(x.size(0),*scale.size()), translation], dim=-1)
-
-            grid = F.affine_grid(transform, (*x.shape[:2], self.image_size, self.image_size))
-            x = F.grid_sample(x, grid, padding_mode='border')
-
-            y = torch.cat([y]*(x.size(0)//y.size(0))).long()
-        else:
-            scale_ratio = self.image_size/self.crop_size
-            transform = torch.Tensor([[scale_ratio,0,0],[0,scale_ratio,0]]).cuda().expand(x.size(0),2,3)
-
-            grid = F.affine_grid(transform, (*x.shape[:2], self.image_size, self.image_size))
-            x = F.grid_sample(x, grid)
-        return (x,y)
-
-    def forward(self, x, debug=False):
         if debug:
             outputs = [x]
         for layer in self.layers:
@@ -82,6 +60,24 @@ class Classifier(nn.Module):
             return x, outputs
         else:
             return x
+
+    def crop_images(self, x, z):
+        # zf = F.conv1d(z,self.crop_filter)
+        # zf = F.conv1d(z,self.crop_filter_t)
+        # zf = (zf == zf.max(-1,keepdim=True)[0].max(-2,keepdim=True)[0])
+        # nz = [zf[i].nonzero() for i in range(zf.shape[0])]
+        # p = [k[k.shape[0]//2][1:].min(torch.Tensor([z.shape[-2]-self.crop_size, z.shape[-1]-self.crop_size]).cuda().long()) for k in nz]
+        # xf = torch.stack([x[i,:,p[i][0]:p[i][0]+self.crop_size,p[i][1]:p[i][1]+self.crop_size] for i in range(zf.shape[0])])
+        zf = F.conv1d(z,self.crop_filter)
+        zf = F.conv1d(zf,self.crop_filter_t)
+        _,zi = zf.view(zf.shape[0],-1).max(-1,keepdim=True)
+        py,px = zi//zf.shape[-1],zi%zf.shape[-1]
+        xf = torch.stack([x[i,:,py[i]:py[i]+self.crop_size,px[i]:px[i]+self.crop_size] for i in range(zf.shape[0])])
+        # zi = zf.view(zf.shape[0],-1).argmax(-1)
+        # py = (zi//zf.shape[-1]).min(torch.Tensor([z.shape[-2]-self.crop_size]).cuda().long())
+        # px = (zi%zf.shape[-1]).min(torch.Tensor([z.shape[-1]-self.crop_size]).cuda().long())
+        # xf = torch.stack([x[i,:,py[i]:py[i]+self.crop_size,px[i]:px[i]+self.crop_size] for i in range(zf.shape[0])])
+        return xf
 
     def preprocess(self, x, z=None, y=None):
         batch_size = x.size(0)
@@ -114,9 +110,9 @@ class Classifier(nn.Module):
         grid = F.affine_grid(transform, (batch_size, 1, self.crop_size, self.crop_size))
         xf = F.grid_sample(x, grid, padding_mode='border')
 
-        return xf, y.long()
+        return xf, y
 
-    def run_epoch(self, mode, batches, epoch=None, criterion=None, optimizer=None, writer=None, log_interval=None):
+    def run_epoch(self, mode, batches, epoch, criterion=None, optimizer=None, writer=None, log_interval=None):
         if mode == 'train':
             self.train()
         else:
@@ -124,101 +120,54 @@ class Classifier(nn.Module):
 
         loss = 0.0
         correct_predictions = 0
-        # true_positives = 0
-        # false_negatives = 0
-        # false_positives = 0
         data_size = 0
         i = 0
-        if epoch is not None:
-            batches = tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches))
-        else:
-            batches = tqdm(batches, total=len(batches))
-
-        for data in batches:
+        for data in tqdm(batches, desc='Epoch {}: '.format(epoch), total=len(batches)):
             if self.is_cuda:
                 for k in range(len(data)):
-                    data[k] = data[k].cuda().float()
+                    data[k] = data[k].cuda()
             if len(data) > 2:
                 x,y,z = data[:3]
-                if self.use_masks:
-                    x,y = self.preprocess(x,z,y)
             else:
                 x,y = data
-                if self.augment:
-                    x,y = self.augment_batch(x,y)
-                y = y.long()
-
-            batch_size = x.size(0)
+                z = None
 
             if mode == 'train':
-                batch_loss = 0.0
-                predictions = None
-                bn = x.size(0)//batch_size
-                for bi in range(0, bn):
-                    optimizer.zero_grad()
+                optimizer.zero_grad()
 
-                    # Forward Pass
-                    logits = self.forward(x[bi*batch_size:(bi+1)*batch_size]).squeeze()
-                    bi_loss = criterion(logits, y[bi*batch_size:(bi+1)*batch_size])
+                # Forward Pass
+                logits = self.forward(x,z)
+                batch_loss = criterion(logits, y)
 
-                    # Backward Pass
-                    bi_loss.backward()
-                    optimizer.step()
-
-                    batch_loss += bi_loss.item()
-                    if predictions is None:
-                        predictions = logits.argmax(-1)
-                    else:
-                        predictions = torch.cat([predictions, logits.argmax(-1)])
-                batch_loss /= bn
+                # Backward Pass
+                batch_loss.backward()
+                optimizer.step()
             else:
                 with torch.no_grad():
                     # Forward Pass
-                    logits = self.forward(x).squeeze()
-                    batch_loss = criterion(logits, y).item()
-                    predictions = logits.argmax(-1)
+                    logits = self.forward(x,z)
+                    batch_loss = criterion(logits, y)
 
             # Update metrics
-            loss += batch_loss
-            # true_positives += (predictions[y.byte()] == 1).sum().item()
-            # false_negatives += (predictions[y.byte()] == 0).sum().item()
-            # false_positives += (predictions[1 - y.byte()] == 0).sum().item()
-            correct_predictions += (predictions.long() == y.long()).sum().item()
+            loss += batch_loss.item()
+            predictions = torch.argmax(logits, dim=1)
+            correct_predictions += (predictions == y.long()).sum().item()
             data_size += x.shape[0]
 
             if mode == 'train' and (log_interval is not None) and (i % log_interval == 0):
-                writer.add_scalar('c/{}_loss'.format(mode), loss/(i+1), epoch*len(batches)+i)
+                writer.add_scalar('c/{}_loss'.format(mode), batch_loss.item(), epoch*len(batches)+i)
             i += 1
 
-        loss = loss/i
+        loss = loss/len(batches)
         accuracy = correct_predictions/data_size
-        # if self.out_features == 1:
-        #     recall = true_positives/(true_positives+false_negatives)
-        #     precision = true_positives/(true_positives+false_positives)
         if writer is not None:
             writer.add_scalar('c/{}_acc'.format(mode), accuracy, epoch)
             if mode == 'valid':
                 writer.add_scalar('c/{}_loss'.format(mode), loss, epoch)
-            # if self.out_features == 1:
-            #     writer.add_scalar('c/{}_recall'.format(mode), recall, epoch)
-            #     writer.add_scalar('c/{}_precision'.format(mode), precision, epoch)
-
-        # if self.out_features == 1:
-        #     return {'loss': loss, 'acc': accuracy, 'recall': recall, 'precision': precision}
-        # else:
         return {'loss': loss, 'acc': accuracy}
 
-    def get_criterion(self, no_reduction=False):
-        if no_reduction:
-            if self.out_features == 1:
-                return nn.BCEWithLogitsLoss(reduction='none')
-            else:
-                return nn.CrossEntropyLoss(reduction='none')
-        else:
-            if self.out_features == 1:
-                return nn.BCEWithLogitsLoss()
-            else:
-                return nn.CrossEntropyLoss()
+    def get_criterion(self):
+        return nn.CrossEntropyLoss()
 
     def predict(self, batches, labels=True):
         predictions = None
@@ -247,23 +196,16 @@ class Classifier(nn.Module):
 
                 # Update metrics
                 if predictions is None:
-                    if self.out_features == 1:
-                        predictions = torch.ge(torch.sigmoid(logits), 0.5)
-                    else:
-                        predictions = torch.argmax(logits, dim=1)
+                    predictions = torch.argmax(logits,dim=1)
                     if labels:
                         y_true = y
                 else:
-                    if self.out_features == 1:
-                        preds = torch.ge(torch.sigmoid(logits), 0.5)
-                    else:
-                        preds = torch.argmax(logits, dim=1)
-                    predictions = torch.cat([predictions, preds])
+                    predictions = torch.cat([predictions, torch.argmax(logits,dim=1)])
                     if labels:
                         y_true = torch.cat([y_true, y])
 
             if labels:
-                accuracy = (predictions.long() == y_true.long()).double().mean().item()
+                accuracy = (predictions == y_true.long()).double().mean().item()
                 return {'predictions': predictions, 'acc': accuracy}
             else:
                 return {'predictions': predictions}

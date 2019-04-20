@@ -164,10 +164,10 @@ MODULES = {
 def create_module(config, in_features=None):
     if config[0] == 'resnet18':
         module = models.resnet18(True)
-        module.fc = nn.Linear(512, int(config[1]))
+        module.fc = nn.Linear(512, 1)
     elif config[0] == 'resnet50':
         module = models.resnet50(True)
-        module.fc = nn.Linear(2048, int(config[1]))
+        module.fc = nn.Linear(2048, 1)
     else:
         try:
             if config[0] in MODULES['nn']:

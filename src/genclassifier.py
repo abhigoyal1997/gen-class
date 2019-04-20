@@ -111,7 +111,8 @@ class GenClassifier(nn.Module):
             y = torch.cat([y[:num_masks], y[num_masks:].repeat(self.num_mask_samples)])
             zl = torch.cat([zl[:num_masks], zl[num_masks:].repeat(self.num_mask_samples, 1, 1, 1)])
 
-        yl = self.classifier(x,z)
+        x,y = self.classifier.preprocess(x,z,y)
+        yl = self.classifier(x)
         nll = self.segmentation_nll(zl, z) + self.classification_nll(yl, y)
 
         if num_masks == 0:
@@ -137,13 +138,15 @@ class GenClassifier(nn.Module):
             zp = torch.sigmoid(zl)
             if self.num_mask_samples == 1:
                 z = torch.ge(zp, 0.5).float()
-                yl = self.classifier(x,z)
+                x,y = self.classifier.preprocess(x,z,y)
+                yl = self.classifier(x)
                 yp = torch.softmax(yl, dim=1)
             else:
                 zp = zp.repeat(self.num_mask_samples, 1, 1, 1)
                 z = torch.bernoulli(zp)
                 x = x.repeat(self.num_mask_samples, 1, 1, 1)
-                yl = self.classifier(x, z)
+                x,y = self.classifier.preprocess(x,z,y)
+                yl = self.classifier(x)
                 yp = torch.softmax(yl, dim=1).reshape(self.num_mask_samples, int(yl.shape[0]/self.num_mask_samples), *yl.shape[1:]).mean(dim=0)
 
             if return_masks:
@@ -215,7 +218,8 @@ class GenClassifier(nn.Module):
 
 def p_z(p, x, y, z, classifier):
     pz = torch.prod((p*z + (1-p)*(1-z)).view(p.shape[0], -1), dim=1)
-    p = torch.softmax(classifier(x, z), dim=1)
+    x,y = classifier.preprocess(x,z,y)
+    p = torch.softmax(classifier(x), dim=1)
     py = p[range(p.shape[0]),y]
 
     return pz*py
