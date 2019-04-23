@@ -23,7 +23,10 @@ def save_model(model, model_path):
 def read_config(config_file):
     def cast(x):
         if '.' in x:
-            return float(x)
+            try:
+                return float(x)
+            except Exception:
+                return x
         else:
             try:
                 return int(x)

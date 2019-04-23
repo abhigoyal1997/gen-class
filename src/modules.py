@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 from torchvision import models
 
@@ -53,7 +54,7 @@ class Flat(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, in_channels, out_channels, block_type='conv', activation='relu', first_block=False, strides=[2,1]):
+    def __init__(self, in_channels, out_channels, block_type='conv', activation='relu', first_block=False, strides=[1,1]):
         super(Block, self).__init__()
 
         layers = []
@@ -97,12 +98,12 @@ class DownBlock(Block):
     def __init__(self, in_channels, out_channels, block_type='conv', first_block=False):
         super(DownBlock, self).__init__(in_channels, out_channels, block_type, 'lrelu', first_block)
 
-        # self.pool = create_module(['max2d',2])
+        self.pool = create_module(['max2d',2])
 
     def forward(self, x):
         f = super(DownBlock, self).forward(x)
-        # x = self.pool(f)
-        return f,f
+        x = self.pool(f)
+        return x,f
 
 
 class UpBlock(Block):
@@ -135,6 +136,140 @@ class UpBlock(Block):
         return x
 
 
+class Crop(nn.Module):
+    def __init__(self, in_size, out_size=None, crop_size=None, augment=False):
+        super(Crop, self).__init__()
+
+        self.in_size = in_size
+        self.out_size = out_size if out_size is not None else self.in_size
+        self.crop_size = crop_size if crop_size is not None else self.out_size
+
+        self.crop_filter = torch.ones(1,1,1,self.crop_size,requires_grad=False)
+        self.crop_filter_t = self.crop_filter.transpose(-2,-1)
+
+        self.augment = augment
+        self.is_cuda = False
+
+    def cuda(self, device=None):
+        self.is_cuda = True
+        self.crop_filter = self.crop_filter.cuda()
+        self.crop_filter_t = self.crop_filter_t.cuda()
+        return super(Crop, self).cuda(device)
+
+    def find_bb(self, z, threshold=10):
+        zv = z.cumsum(-2)
+        height = zv[:,0,-1,:].max(1)[0].int()
+
+        zvf = z.flip(-2).cumsum(-2).flip(-2)
+        zvf[zvf<20] = z.shape[-2]
+        zvc = (zvf-zv).abs()<threshold
+
+        zh = z.cumsum(-1)
+        width = zh[:,0,:,-1].max(1)[0].int()
+
+        zhf = z.flip(-1).cumsum(-1).flip(-1)
+        zhf[zhf<20] = z.shape[-1]
+        zhc = (zhf-zh).abs()<threshold
+
+        zpos = zhc*zvc
+
+        zpos = zpos.view(zpos.shape[0],-1).argmax(1)
+        py,px = (zpos//z.shape[-1]).int(),(zpos%z.shape[-1]).int()
+
+        return py,px,height,width
+
+    def forward(self, x, z):
+        with torch.no_grad():
+            batch_size = x.size(0)
+
+            py,px,height,width = self.find_bb(z)
+
+            tx = ((2*px).float()/x.size(-1) - 1)
+            ty = ((2*py).float()/x.size(-2) - 1)
+            x_scale = width.float()/x.size(-1)
+            y_scale = height.float()/x.size(-2)
+
+            if self.augment and self.training:
+                tx += (torch.randn_like(tx)*2-1).cuda()/40
+                ty += (torch.randn_like(ty)*2-1).cuda()/40
+                rotation_angle = torch.rand(batch_size).cuda()*np.pi*2/20
+            else:
+                rotation_angle = torch.zeros(batch_size).cuda()
+
+            scale_factor = torch.stack([torch.stack([x_scale,x_scale],dim=-1), torch.stack([y_scale,y_scale],dim=-1)],dim=-2)
+
+            rcos = torch.cos(rotation_angle).view(batch_size,1,1)
+            rsin = torch.sin(rotation_angle).view(batch_size,1,1)
+
+            rotation = torch.cat([torch.cat([rcos,rsin], dim=2), torch.cat([-rsin,rcos], dim=2)], dim=1)
+
+            translation = torch.stack([tx,ty], dim=-1).unsqueeze(-1)
+
+            transform = torch.cat([scale_factor*rotation, translation], dim=2)
+
+            grid = F.affine_grid(transform, (batch_size, 1, self.out_size, self.out_size))
+            xf = F.grid_sample(x, grid, padding_mode='border')
+
+        return xf
+
+
+class STN(nn.Module):
+    def __init__(self, in_size, out_size=None, augment=False, cuda=True):
+        super(STN, self).__init__()
+
+        self.in_size = in_size
+        self.out_size = out_size if out_size is not None else self.in_size
+        self.is_cuda = cuda
+
+        x = torch.rand(2, 1, self.in_size, self.in_size)
+        if self.is_cuda:
+            x = x.cuda()
+
+        self.localization = nn.Sequential(
+            create_module(['conv', 8, 7], 1),
+            create_module(['max2d',2]),
+            create_module(['relu']),
+            create_module(['conv', 10, 5], 8),
+            create_module(['max2d',2]),
+            create_module(['relu'])
+        )
+        if self.is_cuda:
+            self.localization = self.localization.cuda()
+
+        self.flat = create_module(['flat'])
+        x = self.flat(self.localization(x))
+
+        self.fc = nn.Sequential(
+            create_module(['linear', 32], x.size(1)),
+            create_module(['relu']),
+            create_module(['linear', 3*2], 32),
+        )
+        if self.is_cuda:
+            self.fc = self.fc.cuda()
+
+        self.fc[2].weight.data.zero_()
+        self.fc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
+        self.augment = augment
+
+    def forward(self, x, z, debug=False):
+        xs = self.flat(self.localization(z))
+        theta = self.fc(xs)
+        theta = theta.view(-1, 2, 3)
+
+        if self.augment:
+            pass  # TODO: implement data augmentation
+
+        if self.out_size is None:
+            grid = F.affine_grid(theta, x.shape)
+        else:
+            grid = F.affine_grid(theta, (*x.shape[:2],self.out_size, self.out_size))
+        x = F.grid_sample(x, grid, padding_mode='border')
+
+        if debug:
+            return x, theta
+        return x
+
+
 MODULES = {
     'nn': {
         'conv': nn.Conv2d,
@@ -144,7 +279,9 @@ MODULES = {
         'block': Block,
         'dblock': DownBlock,
         'ublock': UpBlock,
-        'tconv': nn.ConvTranspose2d
+        'tconv': nn.ConvTranspose2d,
+        'stn': STN,
+        'crop': Crop
     },
     'f': {
         'max2d': nn.MaxPool2d,
@@ -161,7 +298,7 @@ MODULES = {
 }
 
 
-def create_module(config, in_features=None):
+def create_module(config, args=None, cuda=True):
     if config[0] == 'resnet18':
         module = models.resnet18(True)
         module.fc = nn.Linear(512, int(config[1]))
@@ -171,7 +308,7 @@ def create_module(config, in_features=None):
     else:
         try:
             if config[0] in MODULES['nn']:
-                module = MODULES['nn'][config[0]](in_features, *config[1:])
+                module = MODULES['nn'][config[0]](args, *config[1:])
             else:
                 module = MODULES['f'][config[0]](*config[1:])
         except KeyError:
@@ -180,5 +317,8 @@ def create_module(config, in_features=None):
         except Exception:
             print('Error while creating module {}'.format(config[0]))
             raise Exception
+
+    if cuda:
+        module = module.cuda()
 
     return module

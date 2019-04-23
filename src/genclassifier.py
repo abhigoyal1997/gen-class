@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 
 from tqdm import tqdm
@@ -11,16 +12,20 @@ class GenClassifier(nn.Module):
 
         self.config = config
         self.num_mask_samples = config[1][0]
+        self.augment = config[1][1]
 
         self.generator = generator
         self.classifier = classifier
+
+        self.generator.augment = self.augment
+        self.classifier.augment = self.augment
 
         self.image_size = self.generator.image_size
 
         self.is_cuda = False
 
-        self.classifier_criterion = nn.CrossEntropyLoss(reduction='none')
-        self.generator_criterion = nn.BCEWithLogitsLoss(reduction='none')
+        self.classifier_criterion = self.classifier.get_criterion(no_reduction=True)
+        self.generator_criterion = self.generator.get_criterion(no_reduction=True)
 
         self.fix_generator = fix_generator
         self.fix_classifier = fix_classifier
@@ -65,6 +70,15 @@ class GenClassifier(nn.Module):
                 optimizer.zero_grad()
 
                 x,y,z,m = data
+                if self.augment:
+                    # x = torch.cat([x,x.flip(-1)],dim=0)
+                    # z = torch.cat([z,z.flip(-1)],dim=0)
+                    # y = torch.cat([y]*2,dim=0)
+                    # m = torch.cat([m]*2,dim=0)
+                    to_flip = torch.rand(x.shape[0])>0.5
+                    x[to_flip,:,:,:] = x[to_flip,:,:,:].flip(-1)
+                    z[to_flip,:,:,:] = z[to_flip,:,:,:].flip(-1)
+
                 num_masks = sum(m)
 
                 # Forward Pass
@@ -111,8 +125,7 @@ class GenClassifier(nn.Module):
             y = torch.cat([y[:num_masks], y[num_masks:].repeat(self.num_mask_samples)])
             zl = torch.cat([zl[:num_masks], zl[num_masks:].repeat(self.num_mask_samples, 1, 1, 1)])
 
-        x,y = self.classifier.preprocess(x,z,y)
-        yl = self.classifier(x)
+        yl = self.classifier(x,z)
         nll = self.segmentation_nll(zl, z) + self.classification_nll(yl, y)
 
         if num_masks == 0:
@@ -138,15 +151,13 @@ class GenClassifier(nn.Module):
             zp = torch.sigmoid(zl)
             if self.num_mask_samples == 1:
                 z = torch.ge(zp, 0.5).float()
-                x,y = self.classifier.preprocess(x,z,y)
-                yl = self.classifier(x)
+                yl = self.classifier(x,z)
                 yp = torch.softmax(yl, dim=1)
             else:
                 zp = zp.repeat(self.num_mask_samples, 1, 1, 1)
                 z = torch.bernoulli(zp)
                 x = x.repeat(self.num_mask_samples, 1, 1, 1)
-                x,y = self.classifier.preprocess(x,z,y)
-                yl = self.classifier(x)
+                yl = self.classifier(x,z)
                 yp = torch.softmax(yl, dim=1).reshape(self.num_mask_samples, int(yl.shape[0]/self.num_mask_samples), *yl.shape[1:]).mean(dim=0)
 
             if return_masks:
@@ -203,8 +214,7 @@ class GenClassifier(nn.Module):
                 return {'predictions': predictions}
 
     def segmentation_nll(self, logits, masks, mean=False):
-        batch_size = logits.shape[0]
-        nll = self.generator_criterion(logits, masks).view(batch_size, -1).mean(dim=1)
+        nll = self.generator_criterion(logits, masks)
         if mean:
             nll = nll.mean()
         return nll
@@ -218,11 +228,18 @@ class GenClassifier(nn.Module):
 
 def p_z(p, x, y, z, classifier):
     pz = torch.prod((p*z + (1-p)*(1-z)).view(p.shape[0], -1), dim=1)
-    x,y = classifier.preprocess(x,z,y)
-    p = torch.softmax(classifier(x), dim=1)
+    p = torch.softmax(classifier(x,z), dim=1)
     py = p[range(p.shape[0]),y]
 
     return pz*py
+
+
+def lp_z(zl, x, y, z, classifier):
+    batch_size = zl.shape[0]
+    lpz = -F.binary_cross_entropy_with_logits(zl, z, reduction='none').view(batch_size, -1).sum(dim=1)
+    lpy = -F.cross_entropy(classifier(x,z), y, reduction='none')
+
+    return lpz + lpy
 
 
 def mh_sample(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
@@ -230,25 +247,25 @@ def mh_sample(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
         zp = torch.sigmoid(zl)
         samples = None
         s1 = torch.ge(zp, 0.5).float()
-        pz1 = p_z(zp, x, y, s1, classifier)
+        pz1 = lp_z(zl, x, y, s1, classifier)
 
         for _ in range(num_samples):
             for _ in range(burnin):
                 s2 = torch.bernoulli(zp).float()
-                pz2 = p_z(zp, x, y, s2, classifier)
-                r = pz2/pz1
+                pz2 = lp_z(zl, x, y, s2, classifier)
+                r = pz2 - pz1
                 if cuda:
-                    u = torch.rand(r.shape, device=torch.device('cuda'))
+                    u = torch.rand(r.shape, device=torch.device('cuda')).log()
                 else:
-                    u = torch.rand(r.shape)
+                    u = torch.rand(r.shape).log()
                 ns = (u>r).nonzero()
-                if ns.shape[0] == 0:
-                    continue
-                s2[ns[:,0]] = s1[ns[:,0]]
+                if ns.shape[0] != 0:
+                    s2[ns[:,0]] = s1[ns[:,0]]
+                    pz2[ns[:,0]] = pz1[ns[:,0]]
                 s1 = s2
                 pz1 = pz2
             if samples is None:
-                samples = s2
+                samples = s1
             else:
-                samples = torch.cat([samples, s2])
+                samples = torch.cat([samples, s1])
         return samples

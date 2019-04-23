@@ -28,11 +28,11 @@ def main(args):
 
         print('Loading data...', flush=True)
         if config[0][0] == 'gc':
-            dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED)
+            dataset = Dataset(args.data_file, image_size=300, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED)
         elif model.config[0][0] == 'c':
-            dataset = Dataset(args.data_file, image_size=model.image_size, masks=model.use_masks, mask_only=model.use_masks, size=args.ds)
+            dataset = Dataset(args.data_file, image_size=300, masks=(model.loc is not None), mask_only=(model.loc is not None), size=args.ds)
         else:
-            dataset = Dataset(args.data_file, image_size=model.image_size, masks=True, mask_only=True, size=args.ds)
+            dataset = Dataset(args.data_file, image_size=300, masks=True, mask_only=True, size=args.ds)
 
         print('Training model...', flush=True)
         train(model, hparams, dataset, model_path, log_interval=2)

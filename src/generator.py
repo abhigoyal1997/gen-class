@@ -7,21 +7,25 @@ from tqdm import tqdm
 
 
 class Generator(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, cuda=True):
         super(Generator, self).__init__()
 
         self.config = config
+        self.is_cuda = cuda
 
         i = 1
         self.in_channels = config[i][0]
         self.image_size = config[i][1]
+        self.augment = config[i][2]
 
-        x = torch.rand(1, self.in_channels, self.image_size, self.image_size)
+        x = torch.rand(2, self.in_channels, self.image_size, self.image_size)
+        if self.is_cuda:
+            x = x.cuda()
 
         self.layers = nn.ModuleList()
         i += 1
         while config[i][0] != 'dblock':
-            self.layers.append(create_module(config[i], x.size(1)))
+            self.layers.append(create_module(config[i], x.size(1), self.is_cuda))
             with torch.no_grad():
                 x = self.layers[-1](x)
             i += 1
@@ -29,32 +33,31 @@ class Generator(nn.Module):
         self.down_blocks = nn.ModuleList()
         f_stack = []
         while config[i][0] != 'block':
-            self.down_blocks.append(create_module(config[i], x.size(1)))
+            self.down_blocks.append(create_module(config[i], x.size(1), self.is_cuda))
             with torch.no_grad():
                 x,f = self.down_blocks[-1](x)
             i += 1
             f_stack.append(f)
 
-        self.conv_block = create_module(config[i], x.size(1))
+        self.conv_block = create_module(config[i], x.size(1), self.is_cuda)
         with torch.no_grad():
             x = self.conv_block(x)
         i += 1
 
         self.up_blocks = nn.ModuleList()
         while config[i][0] != 'conv':
-            self.up_blocks.append(create_module(config[i], x.size(1)))
+            self.up_blocks.append(create_module(config[i], x.size(1), self.is_cuda))
             with torch.no_grad():
                 x = self.up_blocks[-1](x,f_stack.pop())
             i += 1
 
         self.final_layers = nn.ModuleList()
         while i < len(config):
-            self.final_layers.append(create_module(config[i], x.size(1)))
+            self.final_layers.append(create_module(config[i], x.size(1), self.is_cuda))
             with torch.no_grad():
                 x = self.final_layers[-1](x)
             i += 1
 
-        self.is_cuda = False
         self.out_features = x.size(1)
 
     def cuda(self, device=None):
@@ -107,9 +110,9 @@ class Generator(nn.Module):
 
             if self.training:
                 optimizer.zero_grad()
-                # x = x + F.relu(torch.randn_like(x))*0.1
-                # x = torch.cat([x, x.flip(dims=(-1,))])
-                # z = torch.cat([z, z.flip(dims=(-1,))])
+                if self.augment:
+                    x = torch.cat([x,x.flip(-1)],dim=0)
+                    z = torch.cat([z,z.flip(-1)],dim=0)
 
             with torch.set_grad_enabled(self.training):
                 # Forward Pass
@@ -150,32 +153,17 @@ class Generator(nn.Module):
                 writer.add_scalar('g/{}_loss'.format(mode), loss, epoch)
         return {'loss': loss, 'dice': dice, 'accuracy': accuracy}
 
-    def get_criterion(self, pos_weight=None, no_reduction=False, cuda=True):
-        if no_reduction:
-            if pos_weight is None:
-                if self.out_features == 1:
-                    cc_loss = nn.BCEWithLogitsLoss(reduction='none')
-                else:
-                    cc_loss = nn.CrossEntropyLoss(reduction='none')
-            else:
-                pos_weight = torch.Tensor([pos_weight])
-                if cuda:
-                    pos_weight = pos_weight.cuda()
-                cc_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction='none')
-        else:
-            if pos_weight is None:
-                if self.out_features == 1:
-                    cc_loss = nn.BCEWithLogitsLoss()
-                else:
-                    cc_loss = nn.CrossEntropyLoss()
-            else:
-                pos_weight = torch.Tensor([pos_weight])
-                if cuda:
-                    pos_weight = pos_weight.cuda()
-                cc_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    def get_criterion(self, no_reduction=False, l2_penalty=0):
+        cc_loss = nn.BCEWithLogitsLoss(reduction='none')
 
         def loss(logits, labels):
-            return cc_loss(logits, labels)
+            batch_size = labels.shape[0]
+            ret = cc_loss(logits, labels).view(batch_size,-1).sum(1)
+            ret += l2_penalty*(logits.view(batch_size,-1)**2).sum(1)
+            if no_reduction:
+                return ret
+            return ret.mean()
+
         return loss
 
     def predict(self, batches, labels=True):

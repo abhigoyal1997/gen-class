@@ -146,7 +146,7 @@ class FacesDataset(Dataset):
 				x = self.transformation([x])[0]
 				z = torch.ones(1,*self.image_size)
 				m = 0
-			return [x,y,z,m]
+			return [x,y,(z>0).float(),m]
 		else:
 			x = self.transformation([x])[0]
 			return [x,y]
