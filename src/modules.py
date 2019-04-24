@@ -137,23 +137,19 @@ class UpBlock(Block):
 
 
 class Crop(nn.Module):
-    def __init__(self, in_size, out_size=None, crop_size=None, augment=False):
+    def __init__(self, in_size, out_size=None, crop_size=None, square=True, augment=False):
         super(Crop, self).__init__()
 
         self.in_size = in_size
         self.out_size = out_size if out_size is not None else self.in_size
         self.crop_size = crop_size if crop_size is not None else self.out_size
 
-        self.crop_filter = torch.ones(1,1,1,self.crop_size,requires_grad=False)
-        self.crop_filter_t = self.crop_filter.transpose(-2,-1)
-
         self.augment = augment
+        self.square = square
         self.is_cuda = False
 
     def cuda(self, device=None):
         self.is_cuda = True
-        self.crop_filter = self.crop_filter.cuda()
-        self.crop_filter_t = self.crop_filter_t.cuda()
         return super(Crop, self).cuda(device)
 
     def find_bb(self, z, threshold=10):
@@ -175,6 +171,10 @@ class Crop(nn.Module):
 
         zpos = zpos.view(zpos.shape[0],-1).argmax(1)
         py,px = (zpos//z.shape[-1]).int(),(zpos%z.shape[-1]).int()
+
+        if self.square:
+            height = torch.max(height,width)
+            width = height
 
         return py,px,height,width
 

@@ -24,6 +24,7 @@ def main(args):
 
         print('Creating new model...', flush=True)
         model = create_model(config, cuda=args.cuda)
+        model.l2_penalty = args.l2_penalty
         print('Model initialized!', flush=True)
 
         print('Loading data...', flush=True)
@@ -67,6 +68,7 @@ def parse_args():
     parser_train.add_argument('-d','--data-file',dest='data_file',default='data/ms-celebs/train.csv')
     parser_train.add_argument('-ds','--train-size',dest='ds',default=None)
     parser_train.add_argument('-ms','--num-masks',dest='ms',default=None)
+    parser_train.add_argument('-l2','--l2-penalty',dest='l2_penalty',default=0,type=float)
     parser_train.add_argument('-s','--train-specs',dest='train_specs',default='train_specs.txt')
 
     parser_test = subparsers.add_parser('test')

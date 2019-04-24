@@ -24,9 +24,6 @@ class GenClassifier(nn.Module):
 
         self.is_cuda = False
 
-        self.classifier_criterion = self.classifier.get_criterion(no_reduction=True)
-        self.generator_criterion = self.generator.get_criterion(no_reduction=True)
-
         self.fix_generator = fix_generator
         self.fix_classifier = fix_classifier
 
@@ -45,6 +42,8 @@ class GenClassifier(nn.Module):
         return super(GenClassifier, self).cuda(device)
 
     def get_criterion(self):
+        self.classifier_criterion = self.classifier.get_criterion(no_reduction=True)
+        self.generator_criterion = self.generator.get_criterion(no_reduction=True, l2_penalty=0 if not hasattr(self,'l2_penalty') else self.l2_penalty)
         return self.e_step
 
     def run_epoch(self, mode, batches, epoch=None, criterion=None, optimizer=None, writer=None, log_interval=None):
@@ -71,10 +70,6 @@ class GenClassifier(nn.Module):
 
                 x,y,z,m = data
                 if self.augment:
-                    # x = torch.cat([x,x.flip(-1)],dim=0)
-                    # z = torch.cat([z,z.flip(-1)],dim=0)
-                    # y = torch.cat([y]*2,dim=0)
-                    # m = torch.cat([m]*2,dim=0)
                     to_flip = torch.rand(x.shape[0])>0.5
                     x[to_flip,:,:,:] = x[to_flip,:,:,:].flip(-1)
                     z[to_flip,:,:,:] = z[to_flip,:,:,:].flip(-1)
@@ -226,23 +221,13 @@ class GenClassifier(nn.Module):
         return nll
 
 
-def p_z(p, x, y, z, classifier):
-    pz = torch.prod((p*z + (1-p)*(1-z)).view(p.shape[0], -1), dim=1)
-    p = torch.softmax(classifier(x,z), dim=1)
-    py = p[range(p.shape[0]),y]
-
-    return pz*py
-
-
 def lp_z(zl, x, y, z, classifier):
-    batch_size = zl.shape[0]
-    lpz = -F.binary_cross_entropy_with_logits(zl, z, reduction='none').view(batch_size, -1).sum(dim=1)
     lpy = -F.cross_entropy(classifier(x,z), y, reduction='none')
 
-    return lpz + lpy
+    return lpy
 
 
-def mh_sample(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
+def mh_sample(zl, x, y, classifier, burnin=8, cuda=True, num_samples=1):
     with torch.no_grad():
         zp = torch.sigmoid(zl)
         samples = None

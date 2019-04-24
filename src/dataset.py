@@ -84,9 +84,16 @@ class FacesDataset(Dataset):
 
 		print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks if self.num_masks is not None else 0))
 
+	def pad(self, img):
+		sz = img.size
+		pad_l = (self.image_size[1]-sz[0])//2
+		pad_r = self.image_size[1]-sz[0]-pad_l
+		pad_t = (self.image_size[0]-sz[1])//2
+		pad_b = self.image_size[0]-sz[1]-pad_t
+		return transforms.functional.pad(img, (pad_l,pad_t,pad_r,pad_b))
+
 	def transformation(self, imgs):
-		for i in range(len(imgs)):
-			imgs[i] = transforms.functional.resize(imgs[i], self.image_size)
+		imgs = [self.pad(img) for img in imgs]
 
 		if self.augment:
 			img_sz = (int(1.1*self.image_size[0]), int(1.1*self.image_size[1]))
@@ -110,8 +117,7 @@ class FacesDataset(Dataset):
 						imgs[i] = transforms.functional.hflip(imgs[i])
 
 		if self.post_transform is not None:
-			for i in range(len(imgs)):
-				imgs[i] = self.post_transform(imgs[i])
+			imgs = [self.post_transform(img) for img in imgs]
 		return imgs
 
 	def get_label_id(self, label):

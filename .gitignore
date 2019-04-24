@@ -8,6 +8,7 @@ notebook.py
 *backup*
 data/**
 *.config
+*models/
 
 ### JupyterNotebook ###
 .ipynb_checkpoints

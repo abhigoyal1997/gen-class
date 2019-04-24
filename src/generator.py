@@ -111,8 +111,9 @@ class Generator(nn.Module):
             if self.training:
                 optimizer.zero_grad()
                 if self.augment:
-                    x = torch.cat([x,x.flip(-1)],dim=0)
-                    z = torch.cat([z,z.flip(-1)],dim=0)
+                    to_flip = torch.rand(x.shape[0])>0.5
+                    x[to_flip,:,:,:] = x[to_flip,:,:,:].flip(-1)
+                    z[to_flip,:,:,:] = z[to_flip,:,:,:].flip(-1)
 
             with torch.set_grad_enabled(self.training):
                 # Forward Pass
@@ -153,8 +154,10 @@ class Generator(nn.Module):
                 writer.add_scalar('g/{}_loss'.format(mode), loss, epoch)
         return {'loss': loss, 'dice': dice, 'accuracy': accuracy}
 
-    def get_criterion(self, no_reduction=False, l2_penalty=0):
+    def get_criterion(self, no_reduction=False, l2_penalty=None):
         cc_loss = nn.BCEWithLogitsLoss(reduction='none')
+        if l2_penalty is None:
+            l2_penalty = self.l2_penalty
 
         def loss(logits, labels):
             batch_size = labels.shape[0]
