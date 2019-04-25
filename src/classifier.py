@@ -122,7 +122,7 @@ class Classifier(nn.Module):
                     optimizer.zero_grad()
 
                 # Forward Pass
-                logits = self.forward(x,z).squeeze()
+                logits = self.forward(x,z)
                 if logits.shape[0] != y.shape[0]:
                     y = torch.cat([y]*2,dim=0)
                 batch_loss = criterion(logits, y)

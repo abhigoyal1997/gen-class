@@ -111,19 +111,17 @@ class Generator(nn.Module):
             if self.training:
                 optimizer.zero_grad()
                 if self.augment:
-                    to_flip = torch.rand(x.shape[0])>0.5
-                    x[to_flip,:,:,:] = x[to_flip,:,:,:].flip(-1)
-                    z[to_flip,:,:,:] = z[to_flip,:,:,:].flip(-1)
+                    # to_flip = torch.rand(x.shape[0])>0.5
+                    # x[to_flip,:,:,:] = x[to_flip,:,:,:].flip(-1)
+                    # z[to_flip,:,:,:] = z[to_flip,:,:,:].flip(-1)
+                    x = torch.cat([x,x.flip(-1)])
+                    z = torch.cat([z,z.flip(-1)])
 
             with torch.set_grad_enabled(self.training):
                 # Forward Pass
                 logits = self.forward(x)
-                if self.out_features == 1:
-                    p = logits.sigmoid()
-                    predictions = torch.ge(p,0.5).view(z.size(0),-1).float()
-                else:
-                    p = logits.softmax(dim=1)[:,1,:,:]
-                    predictions = logits.argmax(dim=1).view(z.size(0),-1).float()
+                p = logits.sigmoid()
+                predictions = torch.ge(p,0.5).view(z.size(0),-1).float()
                 batch_loss = criterion(logits, z)
                 p = p.view(p.size(0), -1)
                 z = z.view(z.size(0), -1).float()

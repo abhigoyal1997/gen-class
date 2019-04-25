@@ -79,18 +79,21 @@ def load_model(model_path, cuda, weights=True):
 
 def read_hparams(spec_file):
     with open(spec_file,'r') as f:
-        spec = f.readlines()
+        spec = [line.split() if ' ' in line else line for line in f.readlines()]
     param_keys = [
         'batch_size',
+        'batch_size_gc',
         'num_epochs',
         'train_ratio',
-        'lr',
+        'lr_c',
+        'lr_g',
         'num_workers'
     ]
     hparams = {}
     for i in range(len(param_keys)):
-        if '.' in spec[i]:
-            hparams[param_keys[i]] = float(spec[i])
-        else:
-            hparams[param_keys[i]] = int(spec[i])
+        try:
+            hparams[param_keys[i]] = tuple([(float(sp) if '.' in sp else int(sp)) for sp in spec[i]])
+        except Exception:
+            hparams[param_keys[i]] = float(spec[i]) if '.' in spec[i] else int(spec[i])
+
     return hparams

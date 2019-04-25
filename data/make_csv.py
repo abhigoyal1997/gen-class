@@ -1,9 +1,11 @@
 import os
-import numpy as np
 import pandas as pd
-from tqdm import tqdm_notebook as tqdm
+import sys
+from tqdm import tqdm
 
-data_dir = 'data/ms-celebs/data/images'
+seed = int(sys.argv[1])
+
+data_dir = 'data/ms-celebs/data2/images'
 
 classes = os.listdir(data_dir)
 
@@ -20,20 +22,15 @@ for c in tqdm(classes):
             mask_path = 'none'
         df = df.append({'image_path': image_path, 'mask_path': mask_path, 'label': c}, ignore_index=True)
 
-dict((v,k) for k,v in enumerate(classes))
-
-
 test_size = len(df)//5
-df.label.value_counts()
-df.sample(frac=0.2, random_state=1234).label.value_counts()
-df = df.sample(frac=1, random_state=1234)
+print()
+print(df.sample(frac=0.2, random_state=seed).label.value_counts())
+df = df.sample(frac=1, random_state=seed)
 test_df = df.iloc[-test_size:]
 train_df = df.iloc[:-test_size].reset_index(drop=True)
 
 
 test_df = test_df.reset_index(drop=True)[['image_path','label']]
 
-train_df.to_csv('data/ms-celebs/train.csv',index=False)
-test_df.to_csv('data/ms-celebs/test.csv',index=False)
-
-df.to_csv(os.path.join('data/ms-celebs/data.csv'), index=None)
+train_df.to_csv(f'data/ms-celebs/data2/train{seed}.csv',index=False)
+test_df.to_csv(f'data/ms-celebs/data2/test{seed}.csv',index=False)

@@ -73,6 +73,10 @@ class GenClassifier(nn.Module):
                     to_flip = torch.rand(x.shape[0])>0.5
                     x[to_flip,:,:,:] = x[to_flip,:,:,:].flip(-1)
                     z[to_flip,:,:,:] = z[to_flip,:,:,:].flip(-1)
+                    # x = torch.cat([x,x.flip(-1)])
+                    # z = torch.cat([z,z.flip(-1)])
+                    # y = torch.cat([y]*2)
+                    # m = torch.cat([m]*2)
 
                 num_masks = sum(m)
 
@@ -223,11 +227,48 @@ class GenClassifier(nn.Module):
 
 def lp_z(zl, x, y, z, classifier):
     lpy = -F.cross_entropy(classifier(x,z), y, reduction='none')
-
     return lpy
 
 
-def mh_sample(zl, x, y, classifier, burnin=8, cuda=True, num_samples=1):
+def mh_sample(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
+    classifier_state = classifier.training
+    classifier.eval()
+    with torch.no_grad():
+        zp = torch.sigmoid(zl)
+        s1 = torch.ge(zp, 0.5).float()
+        batch_size = x.shape[0]
+
+        zpr = zp.repeat(burnin*num_samples,1,1,1)
+        zlr = zl.repeat(1+burnin*num_samples,1,1,1)
+        xr = x.repeat(1+burnin*num_samples,1,1,1)
+        yr = y.repeat(1+burnin*num_samples)
+
+        candidates = torch.bernoulli(zpr).float()
+        pz = lp_z(zlr, xr, yr, torch.cat([s1,candidates],dim=0), classifier)
+
+        batch_size = x.shape[0]
+
+        for i in range(1, num_samples*burnin+1):
+            r = pz[i*batch_size:(i+1)*batch_size] - pz[(i-1)*batch_size:i*batch_size]
+            if cuda:
+                u = torch.rand(r.shape, device=torch.device('cuda')).log()
+            else:
+                u = torch.rand(r.shape).log()
+            ns = (u>r).nonzero()
+            if ns.shape[0] != 0:
+                candidates[(i-1)*batch_size+ns[:,0]] = s1[ns[:,0]]
+                pz[i*batch_size+ns[:,0]] = pz[(i-1)*batch_size+ns[:,0]]
+            s1 = candidates[(i-1)*batch_size:(i+1)*batch_size]
+
+        idx = sum((list(range((i*burnin-1)*batch_size,i*burnin*batch_size)) for i in range(1,num_samples+1)),[])
+        samples = candidates[idx]
+        classifier.train(classifier_state)
+        return samples
+
+
+def mh_sample_old(zl, x, y, classifier, burnin=4, cuda=True, num_samples=1):
+    classifier_state = classifier.training
+    classifier.eval()
     with torch.no_grad():
         zp = torch.sigmoid(zl)
         samples = None
@@ -253,4 +294,5 @@ def mh_sample(zl, x, y, classifier, burnin=8, cuda=True, num_samples=1):
                 samples = s1
             else:
                 samples = torch.cat([samples, s1])
+        classifier.train(classifier_state)
         return samples

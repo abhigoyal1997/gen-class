@@ -50,9 +50,8 @@ class SBatchSampler(Sampler):
 
 
 class FacesDataset(Dataset):
-	def __init__(self, meta_file, image_size, augment=False, masks=True, size=None, num_masks=None, random_seed=1234, mask_only=False):
+	def __init__(self, meta_file, image_size, masks=True, size=None, num_masks=None, random_seed=0, mask_only=False):
 		super(Dataset, self).__init__()
-		self.augment = augment
 		self.image_size = (image_size, image_size)
 		self.masks = masks
 		self.post_transform = transforms.ToTensor()
@@ -82,7 +81,7 @@ class FacesDataset(Dataset):
 			self.num_masks = min(len(self.df), self.num_masks)
 			self.masks_idx = [1]*self.num_masks + [0]*(len(self.df) - self.num_masks)
 
-		print('Loaded {} instances with {} masks!'.format(len(self.df), self.num_masks if self.num_masks is not None else 0))
+		print('Loaded {} instances with {} masks from {}!'.format(len(self.df), self.num_masks if self.num_masks is not None else 0, meta_file))
 
 	def pad(self, img):
 		sz = img.size
@@ -95,27 +94,6 @@ class FacesDataset(Dataset):
 	def transformation(self, imgs):
 		imgs = [self.pad(img) for img in imgs]
 
-		if self.augment:
-			img_sz = (int(1.1*self.image_size[0]), int(1.1*self.image_size[1]))
-			for i in range(len(imgs)):
-				imgs[i] = transforms.functional.resize(imgs[i], img_sz)
-
-			if self.train:
-				params = transforms.RandomCrop.get_params(imgs[0], output_size=self.image_size)
-				for i in range(len(imgs)):
-					imgs[i] = transforms.functional.crop(imgs[i], *params)
-				params = transforms.RandomRotation.get_params((-30,30))
-				for i in range(len(imgs)):
-					imgs[i] = transforms.functional.rotate(imgs[i], params)
-			else:
-				for i in range(len(imgs)):
-					imgs[i] = transforms.functional.center_crop(imgs[i], self.image_size)
-
-			if self.train:
-				if np.random.rand() > 0.5:
-					for i in range(len(imgs)):
-						imgs[i] = transforms.functional.hflip(imgs[i])
-
 		if self.post_transform is not None:
 			imgs = [self.post_transform(img) for img in imgs]
 		return imgs
@@ -127,7 +105,13 @@ class FacesDataset(Dataset):
 			'm.010g87': 2,
 			'm.010bk0': 3,
 			'm.010lz5': 4,
-			'm.010hn': 5
+			'm.010hn': 5,
+			'm.010ryc': 6,
+			'm.011_3s': 7,
+			'm.011_2h': 8,
+			'm.011_0k': 9,
+			'm.011_7j': 10,
+			'm.011_3d': 11,
 		}
 
 		return LABEL_IDS[label]
