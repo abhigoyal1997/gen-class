@@ -50,12 +50,13 @@ class SBatchSampler(Sampler):
 
 
 class FacesDataset(Dataset):
-	def __init__(self, meta_file, image_size, masks=True, size=None, num_masks=None, random_seed=0, mask_only=False):
+	def __init__(self, meta_file, image_size, masks=True, size=None, num_masks=None, random_seed=0, mask_only=False, dataset='face'):
 		super(Dataset, self).__init__()
 		self.image_size = (image_size, image_size)
 		self.masks = masks
 		self.post_transform = transforms.ToTensor()
 		self.mask_only = mask_only
+		self.dataset = dataset
 
 		self.df = pd.read_csv(meta_file)
 
@@ -99,6 +100,8 @@ class FacesDataset(Dataset):
 		return imgs
 
 	def get_label_id(self, label):
+		if self.dataset == 'mnist':
+			return label
 		LABEL_IDS = {
 			'm.010p3': 0,
 			'm.010ngb': 1,
@@ -125,11 +128,14 @@ class FacesDataset(Dataset):
 		y = self.get_label_id(d[-1])
 		if self.masks:
 			if index < self.num_masks:
-				root = ET.parse(d[1]).getroot()
-				p = [int(i.text) for i in root[-1][-1].getchildren()]
-				z = np.zeros(x.size[::-1])
-				z[p[1]:p[3],p[0]:p[2]] = 1
-				z = Image.fromarray(z)
+				if self.dataset == 'mnist':
+					z = Image.open(d[1])
+				else:
+					root = ET.parse(d[1]).getroot()
+					p = [int(i.text) for i in root[-1][-1].getchildren()]
+					z = np.zeros(x.size[::-1])
+					z[p[1]:p[3],p[0]:p[2]] = 1
+					z = Image.fromarray(z)
 				x,z = self.transformation([x,z])
 				m = 1
 			else:

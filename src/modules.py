@@ -21,9 +21,10 @@ class Normalize(nn.Module):
             x = torch.cat([x]*3, dim=1)
         return (x-self.mean)/self.std
 
-    def cuda(self):
+    def cuda(self, device=None):
         self.mean = self.mean.cuda()
         self.std = self.std.cuda()
+        return super(Normalize, self).cuda(device)
 
 
 class CNormalize(nn.Module):

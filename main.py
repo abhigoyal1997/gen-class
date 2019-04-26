@@ -36,11 +36,11 @@ def main(args):
 
 		print('Loading data...', flush=True)
 		if config[0][0] == 'gc':
-			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED)
+			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=True, size=args.ds, num_masks=args.ms, random_seed=RANDOM_SEED, dataset=args.dataset)
 		elif model.config[0][0] == 'c':
-			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=(model.loc is not None), mask_only=(model.loc is not None), size=args.ds, random_seed=RANDOM_SEED)
+			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=(model.loc is not None), mask_only=(model.loc is not None), size=args.ds, random_seed=RANDOM_SEED, dataset=args.dataset)
 		else:
-			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=True, mask_only=True, size=args.ds, random_seed=RANDOM_SEED)
+			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=True, mask_only=True, size=args.ds, random_seed=RANDOM_SEED, dataset=args.dataset)
 
 		print('Training model...', flush=True)
 		train(model, hparams, dataset, _init_fn, model_path, log_interval=2)
@@ -55,9 +55,9 @@ def main(args):
 
 		print('Loading data...', flush=True)
 		if model.config[0][0] == 'gc':
-			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=False)
+			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=False, dataset=args.dataset)
 		else:
-			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=False, mask_only=False)
+			dataset = Dataset(args.data_file, image_size=IMAGE_SIZE, masks=False, mask_only=False, dataset=args.dataset)
 
 		print('Testing model...', flush=True)
 		test(model, dataset, _init_fn, args.model_path)
@@ -75,6 +75,7 @@ def parse_args():
 	parser_train.add_argument('model_path')
 	parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
 	parser_train.add_argument('-c','--comment',dest='comment',default=None)
+	parser_train.add_argument('-dataset',dest='dataset',default='face')
 	parser_train.add_argument('-d','--data-file',dest='data_file',default='data/ms-celebs/train.csv')
 	parser_train.add_argument('-ds','--train-size',dest='ds',default=None)
 	parser_train.add_argument('-ms','--num-masks',dest='ms',default=None)
@@ -83,6 +84,7 @@ def parse_args():
 
 	parser_test = subparsers.add_parser('test')
 	parser_test.add_argument('model_path')
+	parser_test.add_argument('-dataset',dest='dataset',default='face')
 	parser_test.add_argument('-d','--data-file',dest='data_file',default='data/ms-celebs/test.csv')
 	parser_test.add_argument('-i','--test-init',dest='test_init',default=False,action='store_true')
 
