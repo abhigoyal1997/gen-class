@@ -75,8 +75,8 @@ def parse_args():
 	parser_train.add_argument('model_path')
 	parser_train.add_argument('-mc','--model-config',dest='model_config',default='model_config.txt')
 	parser_train.add_argument('-c','--comment',dest='comment',default=None)
-	parser_train.add_argument('-dataset',dest='dataset',default='face')
-	parser_train.add_argument('-d','--data-file',dest='data_file',default='data/ms-celebs/train.csv')
+	parser_train.add_argument('-dataset',dest='dataset',default='mnist')
+	parser_train.add_argument('-d','--data-file',dest='data_file',default='data/mnist/train.csv')
 	parser_train.add_argument('-ds','--train-size',dest='ds',default=None)
 	parser_train.add_argument('-ms','--num-masks',dest='ms',default=None)
 	parser_train.add_argument('-l2','--l2-penalty',dest='l2_penalty',default=0,type=float)
@@ -84,8 +84,8 @@ def parse_args():
 
 	parser_test = subparsers.add_parser('test')
 	parser_test.add_argument('model_path')
-	parser_test.add_argument('-dataset',dest='dataset',default='face')
-	parser_test.add_argument('-d','--data-file',dest='data_file',default='data/ms-celebs/test.csv')
+	parser_test.add_argument('-dataset',dest='dataset',default='mnist')
+	parser_test.add_argument('-d','--data-file',dest='data_file',default='data/mnist/test.csv')
 	parser_test.add_argument('-i','--test-init',dest='test_init',default=False,action='store_true')
 
 	args = parser.parse_args()
