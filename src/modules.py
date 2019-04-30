@@ -193,7 +193,7 @@ class Crop(nn.Module):
             if self.augment and self.training:
                 tx += (torch.randn_like(tx)*2-1).cuda()/40
                 ty += (torch.randn_like(ty)*2-1).cuda()/40
-                rotation_angle = torch.rand(batch_size).cuda()*np.pi*2/20
+                rotation_angle = torch.rand(batch_size).cuda()*np.pi*2
             else:
                 rotation_angle = torch.zeros(batch_size).cuda()
 

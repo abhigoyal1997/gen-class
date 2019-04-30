@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import random
 
-from src.dataset import FacesDataset as Dataset
+from src.dataset import MaskDataset as Dataset
 from src.training import train
 from src.testing import test
 from src.model_utils import read_config, read_hparams, load_model, create_model

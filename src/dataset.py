@@ -49,9 +49,9 @@ class SBatchSampler(Sampler):
 		return self.len
 
 
-class FacesDataset(Dataset):
+class MaskDataset(Dataset):
 	def __init__(self, meta_file, image_size, masks=True, size=None, num_masks=None, random_seed=0, mask_only=False, dataset='face'):
-		super(Dataset, self).__init__()
+		super(MaskDataset, self).__init__()
 		self.image_size = (image_size, image_size)
 		self.masks = masks
 		self.post_transform = transforms.ToTensor()
@@ -102,20 +102,28 @@ class FacesDataset(Dataset):
 	def get_label_id(self, label):
 		if self.dataset == 'mnist':
 			return label
-		LABEL_IDS = {
-			'm.010p3': 0,
-			'm.010ngb': 1,
-			'm.010g87': 2,
-			'm.010bk0': 3,
-			'm.010lz5': 4,
-			'm.010hn': 5,
-			'm.010ryc': 6,
-			'm.011_3s': 7,
-			'm.011_2h': 8,
-			'm.011_0k': 9,
-			'm.011_7j': 10,
-			'm.011_3d': 11,
-		}
+		if self.dataset == 'bc':
+			LABEL_IDS = {
+				'NEUTROPHIL': 0,
+				'EOSINOPHIL': 1,
+				'LYMPHOCYTE': 2,
+				'MONOCYTE': 3
+			}
+		else:
+			LABEL_IDS = {
+				'm.010p3': 0,
+				'm.010ngb': 1,
+				'm.010g87': 2,
+				'm.010bk0': 3,
+				'm.010lz5': 4,
+				'm.010hn': 5,
+				'm.010ryc': 6,
+				'm.011_3s': 7,
+				'm.011_2h': 8,
+				'm.011_0k': 9,
+				'm.011_7j': 10,
+				'm.011_3d': 11,
+			}
 
 		return LABEL_IDS[label]
 
@@ -128,14 +136,14 @@ class FacesDataset(Dataset):
 		y = self.get_label_id(d[-1])
 		if self.masks:
 			if index < self.num_masks:
-				if self.dataset == 'mnist':
-					z = Image.open(d[1])
-				else:
+				if self.dataset == 'face':
 					root = ET.parse(d[1]).getroot()
 					p = [int(i.text) for i in root[-1][-1].getchildren()]
 					z = np.zeros(x.size[::-1])
 					z[p[1]:p[3],p[0]:p[2]] = 1
 					z = Image.fromarray(z)
+				else:
+					z = Image.open(d[1])
 				x,z = self.transformation([x,z])
 				m = 1
 			else:
